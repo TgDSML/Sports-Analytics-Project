@@ -12,6 +12,12 @@ data/*
 outputs/*
 !outputs/.gitkeep
 
+# Model weights and local tooling
+*.pt
+*.pth
+tools/ffmpeg/
+tools/*.tar
+
 # OS files
 .DS_Store
 Thumbs.db
