@@ -85,6 +85,24 @@ Run YOLO on a sample video:
 python main.py --video data/sample_30s.mp4 --output outputs/yolov8_baseline.mp4 --model yolov8n.pt
 ```
 
+Run YOLO and export detections to CSV:
+
+```bash
+python main.py --video data/sample_30s.mp4 --output outputs/yolo_30s_baseline.mp4 --model yolov8n.pt --conf 0.15 --imgsz 640 --csv-output outputs/detections_30s.csv
+```
+
+Run YOLO with centroid tracking and export detections plus tracks:
+
+```bash
+python main.py --video data/sample_30s.mp4 --output outputs/tracked_30s.mp4 --model yolov8n.pt --conf 0.15 --imgsz 640 --csv-output outputs/detections_30s.csv --enable-tracking --tracks-csv outputs/tracks_30s.csv
+```
+
+Run YOLO with the improved centroid tracker:
+
+```bash
+python main.py --video data/sample_30s.mp4 --output outputs/tracked_30s_improved.mp4 --model yolov8n.pt --conf 0.2 --imgsz 640 --enable-tracking --tracks-csv outputs/tracks_30s_improved.csv --max-distance 120 --max-missing 30 --smoothing 0.7 --min-box-area 100
+```
+
 Run YOLO on one random local SoccerNet video:
 
 ```bash

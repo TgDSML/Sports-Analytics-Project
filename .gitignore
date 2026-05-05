@@ -16,6 +16,7 @@ outputs/*
 *.pt
 *.pth
 tools/ffmpeg/
+tools/ffmpeg/*
 tools/*.tar
 
 # OS files

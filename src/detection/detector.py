@@ -10,9 +10,15 @@ from ultralytics import YOLO
 class Detection:
     """Single filtered object detection."""
 
+    class_id: int
     class_name: str
     confidence: float
-    box: tuple[int, int, int, int]
+    bbox: tuple[int, int, int, int]
+
+    @property
+    def box(self) -> tuple[int, int, int, int]:
+        """Backward-compatible alias for the bounding box."""
+        return self.bbox
 
 
 class YOLODetector:
@@ -57,9 +63,10 @@ class YOLODetector:
 
                 detections.append(
                     Detection(
+                        class_id=class_id,
                         class_name=class_name,
                         confidence=confidence,
-                        box=(int(x1), int(y1), int(x2), int(y2)),
+                        bbox=(int(x1), int(y1), int(x2), int(y2)),
                     )
                 )
 
@@ -76,7 +83,7 @@ class YOLODetector:
         font = cv2.FONT_HERSHEY_SIMPLEX
 
         for detection in detections:
-            x1, y1, x2, y2 = detection.box
+            x1, y1, x2, y2 = detection.bbox
             label = f"Player {detection.confidence:.2f}"
 
             cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, thickness)
