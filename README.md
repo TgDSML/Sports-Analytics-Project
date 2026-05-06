@@ -9,7 +9,8 @@ The current implementation is intentionally small and reproducible:
 - YOLO player detection
 - Optional random video selection from a local SoccerNet sample
 - Annotated MP4 output
-- Placeholder modules for future tracking and analytics work
+- Centroid tracking and tracks CSV export
+- Player movement heatmap generation
 
 ## Setup Instructions
 
@@ -103,6 +104,12 @@ Run YOLO with the improved centroid tracker:
 python main.py --video data/sample_30s.mp4 --output outputs/tracked_30s_improved.mp4 --model yolov8n.pt --conf 0.2 --imgsz 640 --enable-tracking --tracks-csv outputs/tracks_30s_improved.csv --max-distance 120 --max-missing 30 --smoothing 0.7 --min-box-area 100
 ```
 
+Run YOLO with tracking and generate a single-player heatmap:
+
+```bash
+python main.py --video data/sample_30s.mp4 --output outputs/tracked_30s.mp4 --model yolov8n.pt --enable-tracking --tracks-csv outputs/tracks_30s.csv --generate-heatmap --heatmap-track-id 3 --heatmap-output outputs/heatmap_player3.png
+```
+
 Run YOLO on one random local SoccerNet video:
 
 ```bash
@@ -135,6 +142,38 @@ Run with a smaller inference size for faster CPU processing:
 python main.py --video data/sample_30s.mp4 --output outputs/yolov8_fast.mp4 --model yolov8n.pt --imgsz 416
 ```
 
+## Analytics Outputs
+
+Run YOLO baseline and export detections to CSV:
+
+```bash
+python main.py --video data/sample_30s.mp4 --output outputs/yolo_30s_baseline.mp4 --model yolov8n.pt --conf 0.15 --imgsz 640 --csv-output outputs/detections_30s.csv
+```
+
+Run tracking and export tracks to CSV:
+
+```bash
+python main.py --video data/sample_30s.mp4 --output outputs/tracked_30s.mp4 --model yolov8n.pt --enable-tracking --tracks-csv outputs/tracks_30s.csv
+```
+
+Generate a heatmap during the tracking pipeline:
+
+```bash
+python main.py --video data/sample_30s.mp4 --output outputs/tracked_30s.mp4 --model yolov8n.pt --enable-tracking --tracks-csv outputs/tracks_30s.csv --generate-heatmap --heatmap-output outputs/heatmap_all.png
+```
+
+Generate an all-player heatmap from an existing tracks CSV without rerunning YOLO:
+
+```bash
+python -m src.analytics.heatmap --tracks-csv outputs/tracks_30s.csv --output outputs/heatmap_all_from_csv.png
+```
+
+Generate a single-player heatmap from an existing tracks CSV:
+
+```bash
+python -m src.analytics.heatmap --tracks-csv outputs/tracks_30s.csv --track-id 3 --output outputs/heatmap_player3_from_csv.png
+```
+
 ## Project Structure
 
 ```text
@@ -146,7 +185,7 @@ sports-analytics-project/
 |-- src/
 |   |-- analytics/     # Sports metrics and analysis code
 |   |-- detection/     # YOLO detection and visualization code
-|   |-- tracking/      # Tracking integration placeholder
+|   |-- tracking/      # Centroid tracking code
 |   `-- utils/         # Shared helper functions
 |-- main.py            # YOLO video baseline entry point
 |-- requirements.txt   # Python dependencies

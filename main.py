@@ -3,6 +3,7 @@ from pathlib import Path
 
 import cv2
 
+from src.analytics.heatmap import generate_heatmap
 from src.detection.detector import YOLODetector
 from src.tracking.tracker import CentroidTracker
 from src.utils.io import write_detections_csv, write_tracks_csv
@@ -116,7 +117,7 @@ def process_video(
     smoothing: float = 0.7,
     min_box_area: int = 100,
     show: bool = False,
-) -> None:
+) -> tuple[int, int]:
     """Run YOLO on a video and write annotated video plus optional CSV."""
     if not video_path.exists():
         raise FileNotFoundError(f"Video file not found: {video_path}")
@@ -229,6 +230,8 @@ def process_video(
         write_tracks_csv(track_rows, tracks_csv_path)
         print(f"Tracks CSV saved to: {tracks_csv_path}")
 
+    return width, height
+
 
 def main():
     """Parse CLI arguments and run the video detection baseline."""
@@ -313,15 +316,33 @@ def main():
         default=100,
         help="Minimum person box area to keep for tracking",
     )
+    parser.add_argument(
+        "--generate-heatmap",
+        action="store_true",
+        help="Generate a player movement heatmap from the tracks CSV",
+    )
+    parser.add_argument(
+        "--heatmap-output",
+        default="outputs/heatmap_30s.png",
+        help="Path to save the generated heatmap image",
+    )
+    parser.add_argument(
+        "--heatmap-track-id",
+        type=int,
+        help="Optional track ID for a single-player heatmap",
+    )
     args = parser.parse_args()
 
     try:
+        if args.generate_heatmap and not args.enable_tracking:
+            raise RuntimeError("--generate-heatmap requires --enable-tracking")
+
         video_path = Path(args.video)
         if args.random_soccernet:
             video_path = find_random_video(args.soccernet_dir)
             print(f"Selected SoccerNet video: {video_path}")
 
-        process_video(
+        frame_width, frame_height = process_video(
             video_path=video_path,
             output_path=Path(args.output),
             model_path=args.model,
@@ -336,7 +357,17 @@ def main():
             min_box_area=args.min_box_area,
             show=args.show,
         )
-    except (FileNotFoundError, NotADirectoryError, RuntimeError) as error:
+
+        if args.generate_heatmap:
+            generate_heatmap(
+                tracks_csv_path=Path(args.tracks_csv),
+                output_path=Path(args.heatmap_output),
+                frame_width=frame_width,
+                frame_height=frame_height,
+                track_id=args.heatmap_track_id,
+            )
+            print(f"Heatmap saved to: {args.heatmap_output}")
+    except (FileNotFoundError, NotADirectoryError, RuntimeError, ValueError) as error:
         print(f"Error: {error}")
         return
 
