@@ -11,6 +11,8 @@ The current implementation is intentionally small and reproducible:
 - Annotated MP4 output
 - Centroid tracking and tracks CSV export
 - Player movement heatmap generation
+- Player trajectory visualization and movement statistics
+- Simple jersey-color team classification
 
 ## Setup Instructions
 
@@ -173,6 +175,55 @@ Generate a single-player heatmap from an existing tracks CSV:
 ```bash
 python -m src.analytics.heatmap --tracks-csv outputs/tracks_30s.csv --track-id 3 --output outputs/heatmap_player3_from_csv.png
 ```
+
+Generate all-player trajectories from an existing tracks CSV:
+
+```bash
+python -m src.analytics.trajectories --tracks-csv outputs/tracks_30s.csv --output outputs/trajectories_all.png
+```
+
+Generate a single-player trajectory from an existing tracks CSV:
+
+```bash
+python -m src.analytics.trajectories --tracks-csv outputs/tracks_30s.csv --track-id 3 --output outputs/trajectory_player3.png
+```
+
+Generate player movement statistics from an existing tracks CSV:
+
+```bash
+python -m src.analytics.player_stats --tracks-csv outputs/tracks_30s.csv --output outputs/player_stats_30s.csv
+```
+
+Generate raw, readable, Markdown, and Excel player statistics:
+
+```bash
+python -m src.analytics.player_stats --tracks-csv outputs/tracks_30s.csv --output outputs/player_stats_30s.csv --readable-output outputs/player_stats_30s_readable.csv --markdown-output outputs/player_stats_30s.md --excel-output outputs/player_stats_30s.xlsx
+```
+
+Generate trajectories and player statistics during the tracking pipeline:
+
+```bash
+python main.py --video data/sample_30s.mp4 --output outputs/tracked_30s.mp4 --enable-tracking --tracks-csv outputs/tracks_30s.csv --generate-trajectories --trajectory-output outputs/trajectories_all.png --generate-player-stats --player-stats-output outputs/player_stats_30s.csv
+```
+
+## Team Classification
+
+The team classifier assigns tracked players to `Team A` or `Team B` using a simple, explainable jersey-color workflow. It crops the upper half of each tracked player box, averages the jersey color per `track_id`, and clusters those colors with KMeans.
+
+This is a baseline only. It can be wrong when detections are noisy, players are occluded, lighting changes, kits have similar colors, or the goalkeeper/referee colors are mixed with outfield players. It does not use homography, possession, event detection, or a learned re-identification model.
+
+Run color-based team classification, draw a team-colored tracking video, and generate team heatmaps:
+
+```bash
+python -m src.analytics.team_classifier --video data/sample_30s.mp4 --tracks-csv outputs/tracks_30s.csv --output outputs/player_teams_30s.csv --team-video-output outputs/team_tracked_30s.mp4 --team-a-heatmap outputs/heatmap_team_a.png --team-b-heatmap outputs/heatmap_team_b.png
+```
+
+Generated outputs:
+
+- `outputs/player_teams_30s.csv`
+- `outputs/team_tracked_30s.mp4`
+- `outputs/heatmap_team_a.png`
+- `outputs/heatmap_team_b.png`
 
 ## Project Structure
 

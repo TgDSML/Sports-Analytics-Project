@@ -4,6 +4,8 @@ from pathlib import Path
 import cv2
 
 from src.analytics.heatmap import generate_heatmap
+from src.analytics.player_stats import generate_player_stats
+from src.analytics.trajectories import generate_trajectory_plot
 from src.detection.detector import YOLODetector
 from src.tracking.tracker import CentroidTracker
 from src.utils.io import write_detections_csv, write_tracks_csv
@@ -331,11 +333,44 @@ def main():
         type=int,
         help="Optional track ID for a single-player heatmap",
     )
+    parser.add_argument(
+        "--generate-trajectories",
+        action="store_true",
+        help="Generate player trajectory plots from the tracks CSV",
+    )
+    parser.add_argument(
+        "--trajectory-output",
+        default="outputs/trajectories_all.png",
+        help="Path to save the generated trajectory image",
+    )
+    parser.add_argument(
+        "--trajectory-track-id",
+        type=int,
+        help="Optional track ID for a single-player trajectory plot",
+    )
+    parser.add_argument(
+        "--generate-player-stats",
+        action="store_true",
+        help="Generate player movement statistics from the tracks CSV",
+    )
+    parser.add_argument(
+        "--player-stats-output",
+        default="outputs/player_stats_30s.csv",
+        help="Path to save player movement statistics CSV",
+    )
     args = parser.parse_args()
 
     try:
-        if args.generate_heatmap and not args.enable_tracking:
-            raise RuntimeError("--generate-heatmap requires --enable-tracking")
+        analytics_requested = (
+            args.generate_heatmap
+            or args.generate_trajectories
+            or args.generate_player_stats
+        )
+        if analytics_requested and not args.enable_tracking:
+            raise RuntimeError(
+                "--generate-heatmap, --generate-trajectories, and "
+                "--generate-player-stats require --enable-tracking"
+            )
 
         video_path = Path(args.video)
         if args.random_soccernet:
@@ -367,6 +402,23 @@ def main():
                 track_id=args.heatmap_track_id,
             )
             print(f"Heatmap saved to: {args.heatmap_output}")
+
+        if args.generate_trajectories:
+            generate_trajectory_plot(
+                tracks_csv_path=Path(args.tracks_csv),
+                output_path=Path(args.trajectory_output),
+                frame_width=frame_width,
+                frame_height=frame_height,
+                track_id=args.trajectory_track_id,
+            )
+            print(f"Trajectory plot saved to: {args.trajectory_output}")
+
+        if args.generate_player_stats:
+            generate_player_stats(
+                tracks_csv_path=Path(args.tracks_csv),
+                output_csv_path=Path(args.player_stats_output),
+            )
+            print(f"Player stats saved to: {args.player_stats_output}")
     except (FileNotFoundError, NotADirectoryError, RuntimeError, ValueError) as error:
         print(f"Error: {error}")
         return
