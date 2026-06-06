@@ -14,16 +14,12 @@ def generate_trajectory_plot(
     frame_width,
     frame_height,
     track_id=None,
+    top_k=None,
 ):
     """Generate a football-style trajectory plot from tracked centroids."""
     tracks_path = Path(tracks_csv_path)
     if not tracks_path.exists():
         raise FileNotFoundError(f"Tracks CSV not found: {tracks_path}")
-
-    frame_width = int(frame_width)
-    frame_height = int(frame_height)
-    if frame_width <= 0 or frame_height <= 0:
-        raise ValueError("frame_width and frame_height must be positive")
 
     tracks = pd.read_csv(tracks_path)
     required_columns = {"center_x", "center_y", "track_id"}
@@ -32,9 +28,19 @@ def generate_trajectory_plot(
         columns = ", ".join(sorted(missing_columns))
         raise ValueError(f"Tracks CSV missing required column(s): {columns}")
 
+    frame_width, frame_height = _resolve_frame_size(tracks, frame_width, frame_height)
+
     if track_id is not None:
         track_id = int(track_id)
         tracks = tracks[tracks["track_id"] == track_id]
+    elif top_k is not None:
+        top_track_ids = (
+            tracks["track_id"]
+            .value_counts()
+            .head(int(top_k))
+            .index
+        )
+        tracks = tracks[tracks["track_id"].isin(top_track_ids)]
 
     sort_columns = [column for column in ("track_id", "frame", "timestamp") if column in tracks.columns]
     if sort_columns:
@@ -61,6 +67,8 @@ def generate_trajectory_plot(
     title = (
         f"Player {track_id} Trajectory"
         if track_id is not None
+        else f"Top {top_k} Player Trajectories"
+        if top_k is not None
         else "Player Trajectories"
     )
     _draw_title(canvas, title)
@@ -91,6 +99,21 @@ def _track_colors(track_ids) -> dict:
         bgr = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)[0][0]
         colors[track_id] = tuple(int(value) for value in bgr)
     return colors
+
+
+def _resolve_frame_size(tracks: pd.DataFrame, frame_width, frame_height) -> tuple[int, int]:
+    if frame_width is not None and frame_height is not None:
+        frame_width = int(frame_width)
+        frame_height = int(frame_height)
+    else:
+        width_source = "x2" if "x2" in tracks.columns else "center_x"
+        height_source = "y2" if "y2" in tracks.columns else "center_y"
+        frame_width = int(np.ceil(tracks[width_source].max())) + 1
+        frame_height = int(np.ceil(tracks[height_source].max())) + 1
+
+    if frame_width <= 0 or frame_height <= 0:
+        raise ValueError("frame_width and frame_height must be positive")
+    return frame_width, frame_height
 
 
 def _draw_field_background(width: int, height: int):
@@ -184,16 +207,19 @@ def main() -> None:
     parser.add_argument(
         "--frame-width",
         type=int,
-        default=398,
-        help="Output trajectory width in pixels",
+        help="Output trajectory width in pixels. Inferred from tracks when omitted.",
     )
     parser.add_argument(
         "--frame-height",
         type=int,
-        default=224,
-        help="Output trajectory height in pixels",
+        help="Output trajectory height in pixels. Inferred from tracks when omitted.",
     )
     parser.add_argument("--track-id", type=int, help="Optional track ID for one player")
+    parser.add_argument(
+        "--top-k",
+        type=int,
+        help="Plot only the K track IDs with the most tracked frames",
+    )
     args = parser.parse_args()
 
     try:
@@ -203,6 +229,7 @@ def main() -> None:
             frame_width=args.frame_width,
             frame_height=args.frame_height,
             track_id=args.track_id,
+            top_k=args.top_k,
         )
     except (FileNotFoundError, RuntimeError, ValueError) as error:
         print(f"Error: {error}")

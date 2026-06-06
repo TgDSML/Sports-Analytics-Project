@@ -20,17 +20,14 @@ def generate_heatmap(
     if not tracks_path.exists():
         raise FileNotFoundError(f"Tracks CSV not found: {tracks_path}")
 
-    frame_width = int(frame_width)
-    frame_height = int(frame_height)
-    if frame_width <= 0 or frame_height <= 0:
-        raise ValueError("frame_width and frame_height must be positive")
-
     tracks = pd.read_csv(tracks_path)
     required_columns = {"center_x", "center_y", "track_id"}
     missing_columns = required_columns - set(tracks.columns)
     if missing_columns:
         columns = ", ".join(sorted(missing_columns))
         raise ValueError(f"Tracks CSV missing required column(s): {columns}")
+
+    frame_width, frame_height = _resolve_frame_size(tracks, frame_width, frame_height)
 
     if track_id is not None:
         track_id = int(track_id)
@@ -144,6 +141,21 @@ def _odd_kernel_size(value: int) -> int:
     return value if value % 2 == 1 else value + 1
 
 
+def _resolve_frame_size(tracks: pd.DataFrame, frame_width, frame_height) -> tuple[int, int]:
+    if frame_width is not None and frame_height is not None:
+        frame_width = int(frame_width)
+        frame_height = int(frame_height)
+    else:
+        width_source = "x2" if "x2" in tracks.columns else "center_x"
+        height_source = "y2" if "y2" in tracks.columns else "center_y"
+        frame_width = int(np.ceil(tracks[width_source].max())) + 1
+        frame_height = int(np.ceil(tracks[height_source].max())) + 1
+
+    if frame_width <= 0 or frame_height <= 0:
+        raise ValueError("frame_width and frame_height must be positive")
+    return frame_width, frame_height
+
+
 def main() -> None:
     """Parse CLI arguments and generate a heatmap from an existing tracks CSV."""
     parser = argparse.ArgumentParser(
@@ -162,14 +174,12 @@ def main() -> None:
     parser.add_argument(
         "--frame-width",
         type=int,
-        default=398,
-        help="Output heatmap width in pixels",
+        help="Output heatmap width in pixels. Inferred from tracks when omitted.",
     )
     parser.add_argument(
         "--frame-height",
         type=int,
-        default=224,
-        help="Output heatmap height in pixels",
+        help="Output heatmap height in pixels. Inferred from tracks when omitted.",
     )
     parser.add_argument(
         "--track-id",

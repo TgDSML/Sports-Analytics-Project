@@ -8,3 +8,4 @@ torchvision
 ultralytics
 matplotlib
 SoccerNet
+lap>=0.5.12

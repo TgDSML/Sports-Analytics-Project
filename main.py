@@ -2,6 +2,7 @@ import argparse
 from pathlib import Path
 
 import cv2
+from ultralytics import YOLO
 
 from src.analytics.heatmap import generate_heatmap
 from src.analytics.player_stats import generate_player_stats
@@ -105,6 +106,50 @@ def draw_tracks(frame, tracks):
     return annotated_frame
 
 
+def draw_track_box(frame, track_id: int, bbox: tuple[int, int, int, int], color) -> None:
+    """Draw one tracked box and compact ID label in place."""
+    frame_height, frame_width = frame.shape[:2]
+    scale = frame_height / 720
+    font_scale = max(0.25, 0.45 * scale)
+    thickness = max(1, int(2 * scale))
+    padding = max(2, int(4 * scale))
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    x1, y1, x2, y2 = bbox
+    label = f"ID {track_id}"
+
+    cv2.rectangle(frame, (x1, y1), (x2, y2), color, thickness)
+
+    label_size, baseline = cv2.getTextSize(label, font, font_scale, thickness)
+    text_width, text_height = label_size
+    label_x = max(0, min(x1, frame_width - text_width - 2 * padding))
+    label_y = y1 - padding
+    if label_y - text_height - baseline - padding < 0:
+        label_y = y1 + text_height + baseline + padding
+    label_y = min(label_y, frame_height - baseline - padding)
+
+    background_top = max(0, label_y - text_height - baseline - padding)
+    background_bottom = min(frame_height, label_y + baseline + padding)
+    background_right = min(frame_width, label_x + text_width + 2 * padding)
+
+    cv2.rectangle(
+        frame,
+        (label_x, background_top),
+        (background_right, background_bottom),
+        color,
+        -1,
+    )
+    cv2.putText(
+        frame,
+        label,
+        (label_x + padding, label_y),
+        font,
+        font_scale,
+        (0, 0, 0),
+        thickness,
+        cv2.LINE_AA,
+    )
+
+
 def process_video(
     video_path: Path,
     output_path: Path,
@@ -114,6 +159,7 @@ def process_video(
     csv_output_path: Path | None = None,
     enable_tracking: bool = False,
     tracks_csv_path: Path | None = None,
+    tracker_type: str = "bytetrack",
     max_distance: float = 120,
     max_missing: int = 30,
     smoothing: float = 0.7,
@@ -121,6 +167,18 @@ def process_video(
     show: bool = False,
 ) -> tuple[int, int]:
     """Run YOLO on a video and write annotated video plus optional CSV."""
+    if enable_tracking and tracker_type == "bytetrack":
+        return process_video_bytetrack(
+            video_path=video_path,
+            output_path=output_path,
+            model_path=model_path,
+            conf=conf,
+            imgsz=imgsz,
+            csv_output_path=csv_output_path,
+            tracks_csv_path=tracks_csv_path,
+            show=show,
+        )
+
     if not video_path.exists():
         raise FileNotFoundError(f"Video file not found: {video_path}")
 
@@ -235,6 +293,166 @@ def process_video(
     return width, height
 
 
+def process_video_bytetrack(
+    video_path: Path,
+    output_path: Path,
+    model_path: str,
+    conf: float,
+    imgsz: int,
+    csv_output_path: Path | None = None,
+    tracks_csv_path: Path | None = None,
+    show: bool = False,
+) -> tuple[int, int]:
+    """Run YOLO with ByteTrack and write annotated video plus tracks CSV."""
+    if not video_path.exists():
+        raise FileNotFoundError(f"Video file not found: {video_path}")
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    capture = cv2.VideoCapture(str(video_path))
+    if not capture.isOpened():
+        raise RuntimeError(f"Could not open video: {video_path}")
+
+    fps = capture.get(cv2.CAP_PROP_FPS)
+    width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    capture.release()
+    if fps <= 0:
+        fps = 30
+
+    writer = cv2.VideoWriter(
+        str(output_path),
+        cv2.VideoWriter_fourcc(*"mp4v"),
+        fps,
+        (width, height),
+    )
+    if not writer.isOpened():
+        raise RuntimeError(f"Could not create output video: {output_path}")
+
+    print(f"Processing video with ByteTrack: {video_path}")
+    print(f"Writing annotated output: {output_path}")
+
+    model = YOLO(model_path)
+    detection_rows = []
+    track_rows = []
+    total_frames = 0
+    total_tracks_per_frame = 0
+    unique_track_ids = set()
+    track_id_map = {}
+    next_track_id = 1
+
+    results = model.track(
+        source=str(video_path),
+        tracker="bytetrack.yaml",
+        persist=True,
+        conf=conf,
+        imgsz=imgsz,
+        classes=[0],
+        stream=True,
+        verbose=False,
+    )
+
+    for frame_index, result in enumerate(results):
+        annotated_frame = result.orig_img.copy()
+        boxes = result.boxes
+        if boxes is not None:
+            for box in boxes:
+                class_id = int(box.cls[0])
+                if class_id != 0:
+                    continue
+
+                confidence = float(box.conf[0])
+                x1, y1, x2, y2 = box.xyxy[0].tolist()
+                x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
+                width_box = x2 - x1
+                height_box = y2 - y1
+                center_x = (x1 + x2) / 2
+                center_y = (y1 + y2) / 2
+
+                if csv_output_path is not None:
+                    detection_rows.append(
+                        {
+                            "frame": frame_index,
+                            "timestamp": frame_index / fps,
+                            "class_id": class_id,
+                            "class_name": "person",
+                            "confidence": confidence,
+                            "x1": x1,
+                            "y1": y1,
+                            "x2": x2,
+                            "y2": y2,
+                            "center_x": center_x,
+                            "center_y": center_y,
+                            "width": width_box,
+                            "height": height_box,
+                        }
+                    )
+
+                if box.id is None:
+                    continue
+
+                raw_track_id = int(box.id[0])
+                if raw_track_id not in track_id_map:
+                    track_id_map[raw_track_id] = next_track_id
+                    next_track_id += 1
+                track_id = track_id_map[raw_track_id]
+                unique_track_ids.add(track_id)
+                draw_track_box(
+                    annotated_frame,
+                    track_id,
+                    (x1, y1, x2, y2),
+                    (0, 255, 255),
+                )
+                track_rows.append(
+                    {
+                        "frame": frame_index,
+                        "timestamp": frame_index / fps,
+                        "track_id": track_id,
+                        "class_name": "person",
+                        "confidence": confidence,
+                        "x1": x1,
+                        "y1": y1,
+                        "x2": x2,
+                        "y2": y2,
+                        "center_x": center_x,
+                        "center_y": center_y,
+                    }
+                )
+
+        writer.write(annotated_frame)
+
+        frame_track_count = 0
+        if boxes is not None and boxes.id is not None:
+            frame_track_count = len(boxes.id)
+        total_tracks_per_frame += frame_track_count
+        total_frames += 1
+
+        if show:
+            cv2.imshow("YOLO ByteTrack", annotated_frame)
+            if cv2.waitKey(1) & 0xFF == ord("q"):
+                break
+
+    writer.release()
+    if show:
+        cv2.destroyAllWindows()
+
+    average_tracks = total_tracks_per_frame / total_frames if total_frames else 0
+    print(f"Total frames processed: {total_frames}")
+    print(f"Total tracked rows: {len(track_rows)}")
+    print(f"Total unique track IDs: {len(unique_track_ids)}")
+    print(f"Average tracks per frame: {average_tracks:.2f}")
+
+    if csv_output_path is not None:
+        write_detections_csv(detection_rows, csv_output_path)
+        print(f"Detection CSV saved to: {csv_output_path}")
+
+    if tracks_csv_path is not None:
+        write_tracks_csv(track_rows, tracks_csv_path)
+        print(f"Tracks CSV saved to: {tracks_csv_path}")
+
+    return width, height
+
+
 def main():
     """Parse CLI arguments and run the video detection baseline."""
     parser = argparse.ArgumentParser(description="Run YOLO detection on a sports video")
@@ -287,7 +505,13 @@ def main():
     parser.add_argument(
         "--enable-tracking",
         action="store_true",
-        help="Enable simple centroid tracking for person detections",
+        help="Enable tracking for person detections",
+    )
+    parser.add_argument(
+        "--tracker-type",
+        choices=["centroid", "bytetrack"],
+        default="bytetrack",
+        help="Tracking backend to use when tracking is enabled",
     )
     parser.add_argument(
         "--tracks-csv",
@@ -386,6 +610,7 @@ def main():
             csv_output_path=Path(args.csv_output) if args.csv_output else None,
             enable_tracking=args.enable_tracking,
             tracks_csv_path=Path(args.tracks_csv) if args.enable_tracking else None,
+            tracker_type=args.tracker_type,
             max_distance=args.max_distance,
             max_missing=args.max_missing,
             smoothing=args.smoothing,

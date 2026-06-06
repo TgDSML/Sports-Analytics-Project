@@ -1,0 +1,294 @@
+"""Cut a 30-second SoccerNet 720p clip and run the full analytics pipeline."""
+
+import argparse
+import csv
+import shutil
+import subprocess
+import sys
+from collections import Counter
+from pathlib import Path
+
+
+DEFAULT_SOCCERNET_DIR = Path("data/SoccerNet")
+DEFAULT_SOURCE_NAME = "1_720p.mkv"
+DEFAULT_CLIP_PATH = Path("data/sample_30s_720p.mp4")
+LOCAL_FFMPEG_ROOT = Path("tools/ffmpeg")
+
+
+def find_source_video(soccernet_dir: Path, source_name: str) -> Path | None:
+    """Return the first matching SoccerNet source video, if available."""
+    direct_path = soccernet_dir / source_name
+    if direct_path.is_file():
+        return direct_path
+
+    matches = sorted(path for path in soccernet_dir.rglob(source_name) if path.is_file())
+    return matches[0] if matches else None
+
+
+def run_command(command: list[str]) -> None:
+    """Print and run a subprocess command, failing on non-zero exit."""
+    print("Running:", " ".join(command))
+    subprocess.run(command, check=True)
+
+
+def find_ffmpeg() -> str | None:
+    """Return ffmpeg from PATH or the project-local tools directory."""
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is not None:
+        return ffmpeg
+
+    local_matches = sorted(LOCAL_FFMPEG_ROOT.rglob("ffmpeg.exe"))
+    if local_matches:
+        return str(local_matches[0])
+    return None
+
+
+def write_top_tracks_csv(tracks_csv_path: Path, output_path: Path, top_n: int = 5) -> None:
+    """Write rows for the longest-lived tracks to a separate CSV."""
+    with tracks_csv_path.open(newline="", encoding="utf-8") as input_file:
+        reader = csv.DictReader(input_file)
+        if reader.fieldnames is None or "track_id" not in reader.fieldnames:
+            raise RuntimeError(f"Tracks CSV missing track_id column: {tracks_csv_path}")
+        rows = list(reader)
+
+    track_counts = Counter(row["track_id"] for row in rows if row.get("track_id"))
+    top_track_ids = {track_id for track_id, _ in track_counts.most_common(top_n)}
+    top_rows = [row for row in rows if row.get("track_id") in top_track_ids]
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", newline="", encoding="utf-8") as output_file:
+        writer = csv.DictWriter(output_file, fieldnames=reader.fieldnames)
+        writer.writeheader()
+        writer.writerows(top_rows)
+
+    print(f"Top {top_n} tracks CSV saved to: {output_path}")
+
+
+def cut_clip(source_video: Path, clip_path: Path, duration_seconds: int, overwrite: bool) -> None:
+    """Create a short MP4 clip from the 720p SoccerNet MKV."""
+    ffmpeg = find_ffmpeg()
+    if ffmpeg is None:
+        raise RuntimeError("ffmpeg was not found on PATH or under tools/ffmpeg")
+
+    clip_path.parent.mkdir(parents=True, exist_ok=True)
+    command = [
+        ffmpeg,
+        "-y" if overwrite else "-n",
+        "-i",
+        str(source_video),
+        "-t",
+        str(duration_seconds),
+        "-vf",
+        "scale=-2:720",
+        "-an",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "23",
+        str(clip_path),
+    ]
+    run_command(command)
+
+
+def run_analytics(
+    clip_path: Path,
+    model_path: str,
+    conf: float,
+    imgsz: int,
+) -> None:
+    """Run detection, tracking, movement analytics, and team analytics."""
+    python = sys.executable
+    outputs = {
+        "tracked_video": Path("outputs/tracked_30s_720p.mp4"),
+        "detections_csv": Path("outputs/detections_30s_720p.csv"),
+        "tracks_csv": Path("outputs/tracks_30s_720p.csv"),
+        "tracks_top5_csv": Path("outputs/tracks_top5_720p.csv"),
+        "heatmap": Path("outputs/heatmap_all_720p.png"),
+        "trajectories": Path("outputs/trajectories_all_720p.png"),
+        "trajectories_top5": Path("outputs/trajectories_top5_720p.png"),
+        "player_stats": Path("outputs/player_stats_30s_720p.csv"),
+        "player_stats_xlsx": Path("outputs/player_stats_30s_720p.xlsx"),
+        "player_teams": Path("outputs/player_teams_30s_720p.csv"),
+        "team_video": Path("outputs/team_tracked_30s_720p.mp4"),
+        "team_a_heatmap": Path("outputs/heatmap_team_a_720p.png"),
+        "team_b_heatmap": Path("outputs/heatmap_team_b_720p.png"),
+        "team_debug": Path("outputs/team_debug"),
+    }
+
+    run_command(
+        [
+            python,
+            "main.py",
+            "--video",
+            str(clip_path),
+            "--output",
+            str(outputs["tracked_video"]),
+            "--model",
+            model_path,
+            "--conf",
+            str(conf),
+            "--imgsz",
+            str(imgsz),
+            "--csv-output",
+            str(outputs["detections_csv"]),
+            "--enable-tracking",
+            "--tracker-type",
+            "bytetrack",
+            "--tracks-csv",
+            str(outputs["tracks_csv"]),
+            "--generate-heatmap",
+            "--heatmap-output",
+            str(outputs["heatmap"]),
+            "--generate-trajectories",
+            "--trajectory-output",
+            str(outputs["trajectories"]),
+            "--generate-player-stats",
+            "--player-stats-output",
+            str(outputs["player_stats"]),
+        ]
+    )
+
+    write_top_tracks_csv(outputs["tracks_csv"], outputs["tracks_top5_csv"])
+    run_command(
+        [
+            python,
+            "-m",
+            "src.analytics.trajectories",
+            "--tracks-csv",
+            str(outputs["tracks_top5_csv"]),
+            "--output",
+            str(outputs["trajectories_top5"]),
+            "--frame-width",
+            "1280",
+            "--frame-height",
+            "720",
+        ]
+    )
+
+    run_command(
+        [
+            python,
+            "-m",
+            "src.analytics.player_stats",
+            "--tracks-csv",
+            str(outputs["tracks_csv"]),
+            "--output",
+            str(outputs["player_stats"]),
+            "--excel-output",
+            str(outputs["player_stats_xlsx"]),
+        ]
+    )
+
+    run_command(
+        [
+            python,
+            "-m",
+            "src.analytics.team_classifier",
+            "--video",
+            str(clip_path),
+            "--tracks-csv",
+            str(outputs["tracks_csv"]),
+            "--output",
+            str(outputs["player_teams"]),
+            "--team-video-output",
+            str(outputs["team_video"]),
+            "--team-a-heatmap",
+            str(outputs["team_a_heatmap"]),
+            "--team-b-heatmap",
+            str(outputs["team_b_heatmap"]),
+            "--num-clusters",
+            "2",
+            "--detect-roles",
+            "--role-clusters",
+            "5",
+            "--debug-dir",
+            str(outputs["team_debug"]),
+            "--frame-width",
+            "1280",
+            "--frame-height",
+            "720",
+        ]
+    )
+
+    print("720p analytics outputs:")
+    for output_path in outputs.values():
+        print(f"- {output_path}")
+
+
+def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments."""
+    parser = argparse.ArgumentParser(
+        description=(
+            "If SoccerNet 1_720p.mkv exists, cut a 30-second 720p clip and "
+            "run all analytics outputs with a _720p suffix."
+        )
+    )
+    parser.add_argument(
+        "--soccernet-dir",
+        type=Path,
+        default=DEFAULT_SOCCERNET_DIR,
+        help="Directory containing the local SoccerNet files",
+    )
+    parser.add_argument(
+        "--source-name",
+        default=DEFAULT_SOURCE_NAME,
+        help="SoccerNet source filename to search for",
+    )
+    parser.add_argument(
+        "--clip-output",
+        type=Path,
+        default=DEFAULT_CLIP_PATH,
+        help="Path to save the 30-second 720p clip",
+    )
+    parser.add_argument(
+        "--duration",
+        type=int,
+        default=30,
+        help="Clip duration in seconds",
+    )
+    parser.add_argument("--model", default="yolov8n.pt", help="YOLO model path or name")
+    parser.add_argument("--conf", type=float, default=0.15, help="YOLO confidence threshold")
+    parser.add_argument("--imgsz", type=int, default=640, help="YOLO inference image size")
+    parser.add_argument(
+        "--no-overwrite",
+        action="store_true",
+        help="Do not overwrite an existing 30-second clip",
+    )
+    return parser.parse_args()
+
+
+def main() -> int:
+    """Run the 720p clip workflow."""
+    args = parse_args()
+    source_video = find_source_video(args.soccernet_dir, args.source_name)
+    if source_video is None:
+        print(f"Skipping: {args.source_name} was not found under {args.soccernet_dir}")
+        return 0
+
+    try:
+        cut_clip(
+            source_video=source_video,
+            clip_path=args.clip_output,
+            duration_seconds=args.duration,
+            overwrite=not args.no_overwrite,
+        )
+        run_analytics(
+            clip_path=args.clip_output,
+            model_path=args.model,
+            conf=args.conf,
+            imgsz=args.imgsz,
+        )
+    except subprocess.CalledProcessError as error:
+        print(f"Error: command failed with exit code {error.returncode}")
+        return error.returncode
+    except RuntimeError as error:
+        print(f"Error: {error}")
+        return 1
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
