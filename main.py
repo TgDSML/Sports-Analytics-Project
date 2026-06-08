@@ -7,6 +7,7 @@ from ultralytics import YOLO
 from src.analytics.heatmap import generate_heatmap
 from src.analytics.player_stats import generate_player_stats
 from src.analytics.trajectories import generate_trajectory_plot
+from src.detection.ball_detector import BallFilterConfig, process_ball_detection_video
 from src.detection.detector import YOLODetector
 from src.tracking.tracker import CentroidTracker
 from src.utils.io import write_detections_csv, write_tracks_csv
@@ -453,7 +454,7 @@ def process_video_bytetrack(
     return width, height
 
 
-def main():
+def main() -> int:
     """Parse CLI arguments and run the video detection baseline."""
     parser = argparse.ArgumentParser(description="Run YOLO detection on a sports video")
     parser.add_argument(
@@ -582,6 +583,118 @@ def main():
         default="outputs/player_stats_30s.csv",
         help="Path to save player movement statistics CSV",
     )
+    parser.add_argument(
+        "--detect-ball",
+        action="store_true",
+        help="Run the ball detection baseline and export ball outputs",
+    )
+    parser.add_argument(
+        "--ball-model",
+        default="yolov8n.pt",
+        help="YOLO model path or model name to use for ball detection",
+    )
+    parser.add_argument(
+        "--ball-conf",
+        type=float,
+        default=0.10,
+        help="Ball detection confidence threshold",
+    )
+    parser.add_argument(
+        "--ball-imgsz",
+        type=int,
+        default=1280,
+        help="Ball detection inference image size",
+    )
+    parser.add_argument(
+        "--ball-output-csv",
+        default="outputs/ball_detections_filtered.csv",
+        help="Path to save filtered ball detections CSV",
+    )
+    parser.add_argument(
+        "--ball-raw-output-csv",
+        default="outputs/ball_detections_raw.csv",
+        help="Path to save raw ball detections CSV before post-filters",
+    )
+    parser.add_argument(
+        "--ball-video-output",
+        default="outputs/ball_detected_filtered.mp4",
+        help="Path to save the filtered ball-annotated output video",
+    )
+    parser.add_argument(
+        "--ball-summary-csv",
+        default="outputs/ball_debug/ball_detection_summary.csv",
+        help="Path to save ball detection diagnostics CSV",
+    )
+    parser.add_argument(
+        "--ball-summary-md",
+        default="outputs/ball_debug/ball_detection_summary.md",
+        help="Path to save ball detection diagnostics Markdown report",
+    )
+    parser.add_argument(
+        "--ball-debug-dir",
+        default="outputs/ball_debug",
+        help="Directory for optional ball debug frames",
+    )
+    parser.add_argument(
+        "--ball-debug-frame-stride",
+        type=int,
+        default=0,
+        help="Save one raw/filtered debug frame every N frames; 0 disables frame export",
+    )
+    parser.add_argument(
+        "--ball-min-area",
+        type=int,
+        default=20,
+        help="Minimum ball candidate bounding box area in pixels",
+    )
+    parser.add_argument(
+        "--ball-max-area",
+        type=int,
+        default=500,
+        help="Maximum ball candidate bounding box area in pixels",
+    )
+    parser.add_argument(
+        "--ball-min-width",
+        type=int,
+        default=4,
+        help="Minimum ball candidate bounding box width in pixels",
+    )
+    parser.add_argument(
+        "--ball-max-width",
+        type=int,
+        default=30,
+        help="Maximum ball candidate bounding box width in pixels",
+    )
+    parser.add_argument(
+        "--ball-min-height",
+        type=int,
+        default=4,
+        help="Minimum ball candidate bounding box height in pixels",
+    )
+    parser.add_argument(
+        "--ball-max-height",
+        type=int,
+        default=30,
+        help="Maximum ball candidate bounding box height in pixels",
+    )
+    parser.add_argument(
+        "--ball-max-detections-per-frame",
+        type=int,
+        default=1,
+        help="Keep only the top-N filtered ball candidates per frame; 0 keeps all",
+    )
+    parser.add_argument(
+        "--ball-exclude-top-ratio",
+        type=float,
+        default=0.08,
+        help="Exclude ball candidates whose center is in the top fraction of the frame",
+    )
+    parser.add_argument(
+        "--ball-exclude-bottom-ratio",
+        type=float,
+        default=0.0,
+        help="Exclude ball candidates whose center is in the bottom fraction of the frame",
+    )
     args = parser.parse_args()
 
     try:
@@ -644,12 +757,44 @@ def main():
                 output_csv_path=Path(args.player_stats_output),
             )
             print(f"Player stats saved to: {args.player_stats_output}")
+
+        if args.detect_ball:
+            raw_ball_count, filtered_ball_count = process_ball_detection_video(
+                video_path=video_path,
+                raw_output_csv_path=Path(args.ball_raw_output_csv),
+                filtered_output_csv_path=Path(args.ball_output_csv),
+                output_video_path=Path(args.ball_video_output),
+                summary_csv_path=Path(args.ball_summary_csv),
+                summary_md_path=Path(args.ball_summary_md),
+                model_path=args.ball_model,
+                conf=args.ball_conf,
+                imgsz=args.ball_imgsz,
+                filter_config=BallFilterConfig(
+                    min_area=args.ball_min_area,
+                    max_area=args.ball_max_area,
+                    min_width=args.ball_min_width,
+                    max_width=args.ball_max_width,
+                    min_height=args.ball_min_height,
+                    max_height=args.ball_max_height,
+                    max_detections_per_frame=args.ball_max_detections_per_frame,
+                    exclude_top_ratio=args.ball_exclude_top_ratio,
+                    exclude_bottom_ratio=args.ball_exclude_bottom_ratio,
+                ),
+                debug_dir=Path(args.ball_debug_dir),
+                debug_frame_stride=args.ball_debug_frame_stride,
+            )
+            print(f"Raw ball detections saved to: {args.ball_raw_output_csv}")
+            print(f"Filtered ball detections saved to: {args.ball_output_csv}")
+            print(f"Filtered ball annotated video saved to: {args.ball_video_output}")
+            print(f"Raw ball detections exported: {raw_ball_count}")
+            print(f"Filtered ball detections exported: {filtered_ball_count}")
     except (FileNotFoundError, NotADirectoryError, RuntimeError, ValueError) as error:
         print(f"Error: {error}")
-        return
+        return 1
 
     print(f"Annotated video saved to: {args.output}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

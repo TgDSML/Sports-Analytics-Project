@@ -16,12 +16,13 @@ The current pipeline supports:
 - Improved jersey-color team classification using torso crops, track-level color aggregation, and robust LAB clustering.
 - Role-aware classification for outfield players, goalkeeper candidates, referee candidates, and unknown tracks.
 - Team-colored tracking video and outfield-only team heatmaps by default.
+- Optional ball detection baseline with separate ball CSV and annotated video outputs.
 - A 720p SoccerNet clip pipeline that cuts a 30-second sample and regenerates the main outputs.
 
 ## Current Repository Shape
 
 - `main.py`: main CLI for detection, tracking, CSV export, and optional analytics.
-- `src/detection/`: YOLO wrapper and drawing helpers.
+- `src/detection/`: YOLO wrappers and drawing helpers for players and ball candidates.
 - `src/tracking/`: centroid tracker fallback.
 - `src/analytics/`: heatmaps, trajectories, player stats, and jersey-color team classification.
 - `src/utils/`: CSV and video helper functions.
@@ -48,6 +49,7 @@ The local workspace already contains a completed 30-second 720p run:
 - `outputs/heatmap_team_a_720p.png`
 - `outputs/heatmap_team_b_720p.png`
 - `outputs/team_debug/`
+- Optional after a ball run: raw/filtered ball detections CSVs, a filtered ball-annotated video, and `outputs/ball_debug/` diagnostics.
 
 Current generated CSV counts:
 
@@ -75,7 +77,10 @@ This is a reproducible baseline, not a production-grade tactical analytics syste
 - Team classification is color-based and can fail with occlusion, similar kits, lighting changes, bad crops, or fragmented tracks.
 - Goalkeeper/referee role detection is heuristic. It uses color outliers plus track position and movement, and it avoids forcing labels when evidence is weak.
 - Tracks are image-space tracks, not field-coordinate tracks. Distances are pixels, not meters.
+- Ball detection is only a detector baseline. Generic COCO YOLO weights may miss the football or produce false positives because the ball is small, fast, blurry, and often occluded in broadcast video.
+- Ball filtering removes obvious broadcast-graphics/top-region candidates, size outliers, tiny noisy boxes, and by default keeps only the highest-confidence candidate per frame. This improves QA readability but is not ball tracking.
 - There is no homography, camera calibration, possession model, event detection, or player re-identification model.
+- There is no ball tracking, possession model, pass detection, or tactical analytics in this milestone.
 - Generated IDs are tracking IDs, not roster/player identities.
 
 ## Ready-To-Run Checks
@@ -99,3 +104,25 @@ Run the full 720p pipeline when the SoccerNet source video is available:
 ```bash
 python scripts/run_720p_clip_pipeline.py
 ```
+
+Run the same pipeline with the opt-in ball detection baseline:
+
+```bash
+python scripts/run_720p_clip_pipeline.py --detect-ball
+```
+
+Expected ball QA outputs:
+
+- `outputs/ball_detections_raw_30s_720p.csv`
+- `outputs/ball_detections_filtered_30s_720p.csv`
+- `outputs/ball_detected_filtered_30s_720p.mp4`
+- `outputs/ball_debug/ball_detection_summary.csv`
+- `outputs/ball_debug/ball_detection_summary.md`
+
+Use a soccer-specific or fine-tuned ball model when available:
+
+```bash
+python scripts/run_720p_clip_pipeline.py --detect-ball --ball-model path/to/ball_model.pt --ball-conf 0.10 --ball-imgsz 1280
+```
+
+The next recommended step for ball analytics is replacing the generic model with a soccer-specific ball detector or a fine-tuned YOLO model. Possession, passing, event detection, homography, and tactical analytics should wait until ball detection is reliable.

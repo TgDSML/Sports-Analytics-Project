@@ -15,6 +15,7 @@ The current implementation is intentionally small and reproducible:
 - Player trajectory visualization and movement statistics
 - Improved jersey-color team classification
 - Role-aware goalkeeper/referee heuristics
+- Optional ball detection baseline with separate CSV and annotated video outputs
 
 ## Setup Instructions
 
@@ -233,6 +234,55 @@ Generate trajectories and player statistics during the tracking pipeline:
 python main.py --video data/sample_30s.mp4 --output outputs/tracked_30s.mp4 --enable-tracking --tracks-csv outputs/tracks_30s.csv --generate-trajectories --trajectory-output outputs/trajectories_all.png --generate-player-stats --player-stats-output outputs/player_stats_30s.csv
 ```
 
+## Ball Detection Baseline
+
+Ball detection is implemented as a separate opt-in baseline so player detection, player tracking, and team overlays stay unchanged. It runs YOLO on the input video, keeps model classes named `ball`, `football`, `soccer ball`, or `sports ball`, exports raw and filtered CSVs, and writes a separate filtered annotated video with compact `ball 0.72` labels.
+
+Run ball detection with the default generic YOLO model:
+
+```bash
+python main.py --video data/sample_30s.mp4 --output outputs/tracked_30s.mp4 --detect-ball --ball-raw-output-csv outputs/ball_detections_raw.csv --ball-output-csv outputs/ball_detections_filtered.csv --ball-video-output outputs/ball_detected_filtered.mp4
+```
+
+Run ball detection with a soccer-specific or fine-tuned model:
+
+```bash
+python main.py --video data/sample_30s.mp4 --output outputs/tracked_30s.mp4 --detect-ball --ball-model path/to/ball_model.pt --ball-conf 0.10 --ball-imgsz 1280 --ball-raw-output-csv outputs/ball_detections_raw.csv --ball-output-csv outputs/ball_detections_filtered.csv --ball-video-output outputs/ball_detected_filtered.mp4
+```
+
+Practical 720p filters are enabled by default:
+
+- top-frame exclusion for scoreboard/broadcast graphics: `--ball-exclude-top-ratio 0.08`
+- compact candidate size bounds: `--ball-min-area 20`, `--ball-max-area 500`, `--ball-min-width 4`, `--ball-max-width 30`, `--ball-min-height 4`, `--ball-max-height 30`
+- one retained candidate per frame: `--ball-max-detections-per-frame 1`
+
+Optional debug frames can be exported by setting `--ball-debug-frame-stride`, for example:
+
+```bash
+python main.py --video data/sample_30s.mp4 --output outputs/tracked_30s.mp4 --detect-ball --ball-debug-frame-stride 25
+```
+
+Ball detection CSV columns:
+
+- `frame`
+- `timestamp`
+- `x1`
+- `y1`
+- `x2`
+- `y2`
+- `center_x`
+- `center_y`
+- `confidence`
+- `class_id`
+- `class_name`
+
+Current limitation: a generic COCO YOLO model may not reliably detect the football in broadcast video. The ball is small, fast, blurry, and often occluded, so zero detections or false positives are expected on some clips. The next step is to use a soccer-specific ball detector or a YOLO model fine-tuned on football ball annotations.
+
+Ball diagnostics are written to:
+
+- `outputs/ball_debug/ball_detection_summary.csv`
+- `outputs/ball_debug/ball_detection_summary.md`
+
 ## Team Classification
 
 The team classifier assigns tracked players to `Team A`, `Team B`, or `Unknown` using an explainable jersey-color workflow. It samples only the central torso area of each tracked box, rejects grass-heavy or low-quality crops, aggregates valid jersey samples per `track_id`, and clusters robust track-level LAB colors.
@@ -268,6 +318,18 @@ If `1_720p.mkv` exists under `data/SoccerNet/`, cut a 30-second 720p clip and re
 python scripts/run_720p_clip_pipeline.py
 ```
 
+Optionally include ball detection on the same 720p clip:
+
+```bash
+python scripts/run_720p_clip_pipeline.py --detect-ball
+```
+
+With a soccer-specific ball model:
+
+```bash
+python scripts/run_720p_clip_pipeline.py --detect-ball --ball-model path/to/ball_model.pt --ball-conf 0.10 --ball-imgsz 1280
+```
+
 Generated outputs include:
 
 - `data/sample_30s_720p.mp4`
@@ -289,6 +351,14 @@ Generated outputs include:
 - `outputs/team_debug/team_palette.png`
 - `outputs/team_debug/crops/`
 - `outputs/team_debug/role_crops/`
+
+Optional ball outputs:
+
+- `outputs/ball_detections_raw_30s_720p.csv`
+- `outputs/ball_detections_filtered_30s_720p.csv`
+- `outputs/ball_detected_filtered_30s_720p.mp4`
+- `outputs/ball_debug/ball_detection_summary.csv`
+- `outputs/ball_debug/ball_detection_summary.md`
 
 Team classification is a non-training heuristic. It samples only the central
 upper-body region of each tracked box, rejects grass-heavy or low-quality crops,

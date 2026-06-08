@@ -97,6 +97,20 @@ def run_analytics(
     model_path: str,
     conf: float,
     imgsz: int,
+    detect_ball: bool,
+    ball_model_path: str,
+    ball_conf: float,
+    ball_imgsz: int,
+    ball_min_area: int,
+    ball_max_area: int,
+    ball_min_width: int,
+    ball_max_width: int,
+    ball_min_height: int,
+    ball_max_height: int,
+    ball_max_detections_per_frame: int,
+    ball_exclude_top_ratio: float,
+    ball_exclude_bottom_ratio: float,
+    ball_debug_frame_stride: int,
 ) -> None:
     """Run detection, tracking, movement analytics, and team analytics."""
     python = sys.executable
@@ -115,40 +129,90 @@ def run_analytics(
         "team_a_heatmap": Path("outputs/heatmap_team_a_720p.png"),
         "team_b_heatmap": Path("outputs/heatmap_team_b_720p.png"),
         "team_debug": Path("outputs/team_debug"),
+        "ball_raw_detections_csv": Path("outputs/ball_detections_raw_30s_720p.csv"),
+        "ball_filtered_detections_csv": Path("outputs/ball_detections_filtered_30s_720p.csv"),
+        "ball_filtered_video": Path("outputs/ball_detected_filtered_30s_720p.mp4"),
+        "ball_debug": Path("outputs/ball_debug"),
+        "ball_summary_csv": Path("outputs/ball_debug/ball_detection_summary.csv"),
+        "ball_summary_md": Path("outputs/ball_debug/ball_detection_summary.md"),
     }
 
-    run_command(
-        [
-            python,
-            "main.py",
-            "--video",
-            str(clip_path),
-            "--output",
-            str(outputs["tracked_video"]),
-            "--model",
-            model_path,
-            "--conf",
-            str(conf),
-            "--imgsz",
-            str(imgsz),
-            "--csv-output",
-            str(outputs["detections_csv"]),
-            "--enable-tracking",
-            "--tracker-type",
-            "bytetrack",
-            "--tracks-csv",
-            str(outputs["tracks_csv"]),
-            "--generate-heatmap",
-            "--heatmap-output",
-            str(outputs["heatmap"]),
-            "--generate-trajectories",
-            "--trajectory-output",
-            str(outputs["trajectories"]),
-            "--generate-player-stats",
-            "--player-stats-output",
-            str(outputs["player_stats"]),
-        ]
-    )
+    main_command = [
+        python,
+        "main.py",
+        "--video",
+        str(clip_path),
+        "--output",
+        str(outputs["tracked_video"]),
+        "--model",
+        model_path,
+        "--conf",
+        str(conf),
+        "--imgsz",
+        str(imgsz),
+        "--csv-output",
+        str(outputs["detections_csv"]),
+        "--enable-tracking",
+        "--tracker-type",
+        "bytetrack",
+        "--tracks-csv",
+        str(outputs["tracks_csv"]),
+        "--generate-heatmap",
+        "--heatmap-output",
+        str(outputs["heatmap"]),
+        "--generate-trajectories",
+        "--trajectory-output",
+        str(outputs["trajectories"]),
+        "--generate-player-stats",
+        "--player-stats-output",
+        str(outputs["player_stats"]),
+    ]
+    if detect_ball:
+        main_command.extend(
+            [
+                "--detect-ball",
+                "--ball-model",
+                ball_model_path,
+                "--ball-conf",
+                str(ball_conf),
+                "--ball-imgsz",
+                str(ball_imgsz),
+                "--ball-raw-output-csv",
+                str(outputs["ball_raw_detections_csv"]),
+                "--ball-output-csv",
+                str(outputs["ball_filtered_detections_csv"]),
+                "--ball-video-output",
+                str(outputs["ball_filtered_video"]),
+                "--ball-summary-csv",
+                str(outputs["ball_summary_csv"]),
+                "--ball-summary-md",
+                str(outputs["ball_summary_md"]),
+                "--ball-debug-dir",
+                str(outputs["ball_debug"]),
+                "--ball-debug-frame-stride",
+                str(ball_debug_frame_stride),
+                "--ball-min-area",
+                str(ball_min_area),
+                "--ball-max-area",
+                str(ball_max_area),
+                "--ball-min-width",
+                str(ball_min_width),
+                "--ball-max-width",
+                str(ball_max_width),
+                "--ball-min-height",
+                str(ball_min_height),
+                "--ball-max-height",
+                str(ball_max_height),
+                "--ball-max-detections-per-frame",
+                str(ball_max_detections_per_frame),
+                "--ball-exclude-top-ratio",
+                str(ball_exclude_top_ratio),
+                "--ball-exclude-bottom-ratio",
+                str(ball_exclude_bottom_ratio),
+            ]
+        )
+
+    run_command(main_command)
 
     write_top_tracks_csv(outputs["tracks_csv"], outputs["tracks_top5_csv"])
     run_command(
@@ -213,7 +277,9 @@ def run_analytics(
     )
 
     print("720p analytics outputs:")
-    for output_path in outputs.values():
+    for output_name, output_path in outputs.items():
+        if output_name.startswith("ball_") and not detect_ball:
+            continue
         print(f"- {output_path}")
 
 
@@ -252,6 +318,43 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--conf", type=float, default=0.15, help="YOLO confidence threshold")
     parser.add_argument("--imgsz", type=int, default=640, help="YOLO inference image size")
     parser.add_argument(
+        "--detect-ball",
+        action="store_true",
+        help="Also run the ball detection baseline on the 720p clip",
+    )
+    parser.add_argument(
+        "--ball-model",
+        default="yolov8n.pt",
+        help="YOLO model path or name to use for ball detection",
+    )
+    parser.add_argument(
+        "--ball-conf",
+        type=float,
+        default=0.10,
+        help="Ball detection confidence threshold",
+    )
+    parser.add_argument(
+        "--ball-imgsz",
+        type=int,
+        default=1280,
+        help="Ball detection inference image size",
+    )
+    parser.add_argument("--ball-min-area", type=int, default=20)
+    parser.add_argument("--ball-max-area", type=int, default=500)
+    parser.add_argument("--ball-min-width", type=int, default=4)
+    parser.add_argument("--ball-max-width", type=int, default=30)
+    parser.add_argument("--ball-min-height", type=int, default=4)
+    parser.add_argument("--ball-max-height", type=int, default=30)
+    parser.add_argument("--ball-max-detections-per-frame", type=int, default=1)
+    parser.add_argument("--ball-exclude-top-ratio", type=float, default=0.08)
+    parser.add_argument("--ball-exclude-bottom-ratio", type=float, default=0.0)
+    parser.add_argument(
+        "--ball-debug-frame-stride",
+        type=int,
+        default=0,
+        help="Save one ball debug frame every N frames; 0 disables frame export",
+    )
+    parser.add_argument(
         "--no-overwrite",
         action="store_true",
         help="Do not overwrite an existing 30-second clip",
@@ -279,6 +382,20 @@ def main() -> int:
             model_path=args.model,
             conf=args.conf,
             imgsz=args.imgsz,
+            detect_ball=args.detect_ball,
+            ball_model_path=args.ball_model,
+            ball_conf=args.ball_conf,
+            ball_imgsz=args.ball_imgsz,
+            ball_min_area=args.ball_min_area,
+            ball_max_area=args.ball_max_area,
+            ball_min_width=args.ball_min_width,
+            ball_max_width=args.ball_max_width,
+            ball_min_height=args.ball_min_height,
+            ball_max_height=args.ball_max_height,
+            ball_max_detections_per_frame=args.ball_max_detections_per_frame,
+            ball_exclude_top_ratio=args.ball_exclude_top_ratio,
+            ball_exclude_bottom_ratio=args.ball_exclude_bottom_ratio,
+            ball_debug_frame_stride=args.ball_debug_frame_stride,
         )
     except subprocess.CalledProcessError as error:
         print(f"Error: command failed with exit code {error.returncode}")
