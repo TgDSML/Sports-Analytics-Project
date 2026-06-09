@@ -714,6 +714,15 @@ def main() -> int:
             video_path = find_random_video(args.soccernet_dir)
             print(f"Selected SoccerNet video: {video_path}")
 
+        if args.detect_ball:
+            player_output_path = Path(args.output)
+            ball_video_output_path = Path(args.ball_video_output)
+            if player_output_path == ball_video_output_path:
+                raise RuntimeError(
+                    "--ball-video-output must be different from --output so ball "
+                    "annotations do not overwrite the player/tracking video"
+                )
+
         frame_width, frame_height = process_video(
             video_path=video_path,
             output_path=Path(args.output),

@@ -214,6 +214,45 @@ def run_analytics(
 
     run_command(main_command)
 
+    if detect_ball and ball_model_path != "yolov8n.pt":
+        run_command(
+            [
+                python,
+                "-m",
+                "src.detection.compare_ball_models",
+                "--video",
+                str(clip_path),
+                "--candidate-model",
+                ball_model_path,
+                "--generic-model",
+                "yolov8n.pt",
+                "--generic-conf",
+                "0.10",
+                "--candidate-conf",
+                str(ball_conf),
+                "--imgsz",
+                str(ball_imgsz),
+                "--ball-min-area",
+                str(ball_min_area),
+                "--ball-max-area",
+                str(ball_max_area),
+                "--ball-min-width",
+                str(ball_min_width),
+                "--ball-max-width",
+                str(ball_max_width),
+                "--ball-min-height",
+                str(ball_min_height),
+                "--ball-max-height",
+                str(ball_max_height),
+                "--ball-max-detections-per-frame",
+                str(ball_max_detections_per_frame),
+                "--ball-exclude-top-ratio",
+                str(ball_exclude_top_ratio),
+                "--ball-exclude-bottom-ratio",
+                str(ball_exclude_bottom_ratio),
+            ]
+        )
+
     write_top_tracks_csv(outputs["tracks_csv"], outputs["tracks_top5_csv"])
     run_command(
         [
