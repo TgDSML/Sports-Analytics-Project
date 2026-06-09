@@ -16,6 +16,8 @@ The current implementation is intentionally small and reproducible:
 - Improved jersey-color team classification
 - Role-aware goalkeeper/referee heuristics
 - Optional ball detection baseline with separate CSV and annotated video outputs
+- Ball tracking from filtered ball detections
+- Baseline possession estimation from nearest player-to-ball distance
 
 ## Setup Instructions
 
@@ -283,13 +285,60 @@ Ball diagnostics are written to:
 - `outputs/ball_debug/ball_detection_summary.csv`
 - `outputs/ball_debug/ball_detection_summary.md`
 
+## Ball Tracking And Possession
+
+Ball tracking links filtered ball detections using nearest-neighbor association, a maximum movement threshold, confidence-aware scoring, short track persistence, and interpolation across short gaps. It is designed as an explainable baseline rather than a learned ball tracker.
+
+Run ball tracking from an existing filtered ball detection CSV:
+
+```bash
+python -m src.tracking.ball_tracker --video data/sample_30s_720p.mp4 --detections-csv outputs/ball_detections_filtered_30s_720p.csv --output-csv outputs/ball_tracks_30s_720p.csv --output-video outputs/ball_tracked_30s_720p.mp4
+```
+
+Possession is an experimental baseline. It is estimated per ball-track frame by finding the nearest eligible tracked player to the ball and mapping that player to the team-classification output. The default QA gates skip interpolated ball points, require minimum ball confidence, exclude unknown/referee/goalkeeper roles, and smooth team switches across consecutive frames. If no eligible player is close enough, the frame is marked as `None`.
+
+Run possession estimation from existing player, team, and ball-track CSVs:
+
+```bash
+python -m src.analytics.possession --video data/sample_30s_720p.mp4 --player-tracks-csv outputs/tracks_30s_720p.csv --teams-csv outputs/player_teams_30s_720p.csv --ball-tracks-csv outputs/ball_tracks_30s_720p.csv --output-csv outputs/possession_30s_720p.csv --debug-csv outputs/possession_debug_30s_720p.csv --summary-csv outputs/possession_summary_30s_720p.csv --summary-md outputs/possession_summary_30s_720p.md --qa-summary-md outputs/possession_qa_summary.md --output-video outputs/possession_30s_720p.mp4 --debug-video outputs/possession_debug_30s_720p.mp4
+```
+
+Generated outputs:
+
+- `outputs/ball_tracks_30s_720p.csv`
+- `outputs/ball_tracked_30s_720p.mp4`
+- `outputs/ball_debug/ball_tracking_summary.csv`
+- `outputs/ball_debug/ball_tracking_summary.md`
+- `outputs/possession_30s_720p.csv`
+- `outputs/possession_summary_30s_720p.csv`
+- `outputs/possession_summary_30s_720p.md`
+- `outputs/possession_30s_720p.mp4`
+- `outputs/possession_debug_30s_720p.csv`
+- `outputs/possession_debug_30s_720p.mp4`
+- `outputs/possession_qa_summary.md`
+- `outputs/possession_debug_30s_720p.csv`
+- `outputs/possession_debug_30s_720p.mp4`
+- `outputs/possession_qa_summary.md`
+
+Current 720p QA summary:
+
+- Ball tracks: 27
+- Longest ball track: 83 points
+- Interpolated ball points: 195
+- Gaps filled: 82
+- Team A possession: 2.63%
+- Team B possession: 6.64%
+- Unknown possession: 0.00%
+- No possession: 90.73%
+- Possession status: experimental baseline, not validated analytics.
+
 ## Team Classification
 
 The team classifier assigns tracked players to `Team A`, `Team B`, or `Unknown` using an explainable jersey-color workflow. It samples only the central torso area of each tracked box, rejects grass-heavy or low-quality crops, aggregates valid jersey samples per `track_id`, and clusters robust track-level LAB colors.
 
 Role-aware classification can also separate outfield players, goalkeeper candidates, referee candidates, and unknown tracks. It uses extra color clusters plus track position and movement summaries. By default, team heatmaps include only outfield players so goalkeeper/referee movement does not distort team movement maps.
 
-This is a baseline only. It can be wrong when detections are noisy, players are occluded, lighting changes, kits have similar colors, or tracks are fragmented. Goalkeeper/referee detection is heuristic and deliberately avoids forcing labels when evidence is weak. It does not use homography, possession, event detection, roster identity, or a learned re-identification model.
+This is a baseline only. It can be wrong when detections are noisy, players are occluded, lighting changes, kits have similar colors, or tracks are fragmented. Goalkeeper/referee detection is heuristic and deliberately avoids forcing labels when evidence is weak. It does not use homography, event detection, roster identity, or a learned re-identification model.
 
 Run color-based team classification, draw a team-colored tracking video, and generate team heatmaps:
 
@@ -359,6 +408,14 @@ Optional ball outputs:
 - `outputs/ball_detected_filtered_30s_720p.mp4`
 - `outputs/ball_debug/ball_detection_summary.csv`
 - `outputs/ball_debug/ball_detection_summary.md`
+- `outputs/ball_tracks_30s_720p.csv`
+- `outputs/ball_tracked_30s_720p.mp4`
+- `outputs/ball_debug/ball_tracking_summary.csv`
+- `outputs/ball_debug/ball_tracking_summary.md`
+- `outputs/possession_30s_720p.csv`
+- `outputs/possession_summary_30s_720p.csv`
+- `outputs/possession_summary_30s_720p.md`
+- `outputs/possession_30s_720p.mp4`
 
 Team classification is a non-training heuristic. It samples only the central
 upper-body region of each tracked box, rejects grass-heavy or low-quality crops,

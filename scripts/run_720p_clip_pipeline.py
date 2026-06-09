@@ -111,6 +111,13 @@ def run_analytics(
     ball_exclude_top_ratio: float,
     ball_exclude_bottom_ratio: float,
     ball_debug_frame_stride: int,
+    ball_track_max_distance: float,
+    ball_track_max_gap: int,
+    possession_max_distance: float,
+    possession_min_track_confidence: float,
+    possession_min_ball_confidence: float,
+    possession_switch_confirmation_frames: int,
+    possession_assign_interpolated: bool,
 ) -> None:
     """Run detection, tracking, movement analytics, and team analytics."""
     python = sys.executable
@@ -135,6 +142,17 @@ def run_analytics(
         "ball_debug": Path("outputs/ball_debug"),
         "ball_summary_csv": Path("outputs/ball_debug/ball_detection_summary.csv"),
         "ball_summary_md": Path("outputs/ball_debug/ball_detection_summary.md"),
+        "ball_tracks_csv": Path("outputs/ball_tracks_30s_720p.csv"),
+        "ball_tracked_video": Path("outputs/ball_tracked_30s_720p.mp4"),
+        "ball_tracking_summary_csv": Path("outputs/ball_debug/ball_tracking_summary.csv"),
+        "ball_tracking_summary_md": Path("outputs/ball_debug/ball_tracking_summary.md"),
+        "possession_csv": Path("outputs/possession_30s_720p.csv"),
+        "possession_debug_csv": Path("outputs/possession_debug_30s_720p.csv"),
+        "possession_summary_csv": Path("outputs/possession_summary_30s_720p.csv"),
+        "possession_summary_md": Path("outputs/possession_summary_30s_720p.md"),
+        "possession_video": Path("outputs/possession_30s_720p.mp4"),
+        "possession_debug_video": Path("outputs/possession_debug_30s_720p.mp4"),
+        "possession_qa_summary": Path("outputs/possession_qa_summary.md"),
     }
 
     main_command = [
@@ -253,6 +271,31 @@ def run_analytics(
             ]
         )
 
+    if detect_ball:
+        run_command(
+            [
+                python,
+                "-m",
+                "src.tracking.ball_tracker",
+                "--video",
+                str(clip_path),
+                "--detections-csv",
+                str(outputs["ball_filtered_detections_csv"]),
+                "--output-csv",
+                str(outputs["ball_tracks_csv"]),
+                "--output-video",
+                str(outputs["ball_tracked_video"]),
+                "--summary-csv",
+                str(outputs["ball_tracking_summary_csv"]),
+                "--summary-md",
+                str(outputs["ball_tracking_summary_md"]),
+                "--max-distance",
+                str(ball_track_max_distance),
+                "--max-gap",
+                str(ball_track_max_gap),
+            ]
+        )
+
     write_top_tracks_csv(outputs["tracks_csv"], outputs["tracks_top5_csv"])
     run_command(
         [
@@ -315,9 +358,52 @@ def run_analytics(
         ]
     )
 
+    if detect_ball:
+        possession_command = [
+            python,
+            "-m",
+            "src.analytics.possession",
+            "--video",
+            str(clip_path),
+            "--player-tracks-csv",
+            str(outputs["tracks_csv"]),
+            "--teams-csv",
+            str(outputs["player_teams"]),
+            "--ball-tracks-csv",
+            str(outputs["ball_tracks_csv"]),
+            "--output-csv",
+            str(outputs["possession_csv"]),
+            "--debug-csv",
+            str(outputs["possession_debug_csv"]),
+            "--summary-csv",
+            str(outputs["possession_summary_csv"]),
+            "--summary-md",
+            str(outputs["possession_summary_md"]),
+            "--qa-summary-md",
+            str(outputs["possession_qa_summary"]),
+            "--output-video",
+            str(outputs["possession_video"]),
+            "--debug-video",
+            str(outputs["possession_debug_video"]),
+            "--max-player-ball-distance",
+            str(possession_max_distance),
+            "--min-track-confidence",
+            str(possession_min_track_confidence),
+            "--min-ball-confidence",
+            str(possession_min_ball_confidence),
+            "--switch-confirmation-frames",
+            str(possession_switch_confirmation_frames),
+        ]
+        if possession_assign_interpolated:
+            possession_command.append("--assign-interpolated")
+        run_command(possession_command)
+
     print("720p analytics outputs:")
     for output_name, output_path in outputs.items():
-        if output_name.startswith("ball_") and not detect_ball:
+        if (
+            output_name.startswith("ball_")
+            or output_name.startswith("possession_")
+        ) and not detect_ball:
             continue
         print(f"- {output_path}")
 
@@ -393,6 +479,17 @@ def parse_args() -> argparse.Namespace:
         default=0,
         help="Save one ball debug frame every N frames; 0 disables frame export",
     )
+    parser.add_argument("--ball-track-max-distance", type=float, default=90.0)
+    parser.add_argument("--ball-track-max-gap", type=int, default=8)
+    parser.add_argument("--possession-max-distance", type=float, default=80.0)
+    parser.add_argument("--possession-min-track-confidence", type=float, default=0.10)
+    parser.add_argument("--possession-min-ball-confidence", type=float, default=0.25)
+    parser.add_argument("--possession-switch-confirmation-frames", type=int, default=3)
+    parser.add_argument(
+        "--possession-assign-interpolated",
+        action="store_true",
+        help="Allow interpolated ball points to assign possession. Default skips them.",
+    )
     parser.add_argument(
         "--no-overwrite",
         action="store_true",
@@ -435,6 +532,13 @@ def main() -> int:
             ball_exclude_top_ratio=args.ball_exclude_top_ratio,
             ball_exclude_bottom_ratio=args.ball_exclude_bottom_ratio,
             ball_debug_frame_stride=args.ball_debug_frame_stride,
+            ball_track_max_distance=args.ball_track_max_distance,
+            ball_track_max_gap=args.ball_track_max_gap,
+            possession_max_distance=args.possession_max_distance,
+            possession_min_track_confidence=args.possession_min_track_confidence,
+            possession_min_ball_confidence=args.possession_min_ball_confidence,
+            possession_switch_confirmation_frames=args.possession_switch_confirmation_frames,
+            possession_assign_interpolated=args.possession_assign_interpolated,
         )
     except subprocess.CalledProcessError as error:
         print(f"Error: command failed with exit code {error.returncode}")
