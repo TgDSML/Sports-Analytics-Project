@@ -316,9 +316,6 @@ Generated outputs:
 - `outputs/possession_debug_30s_720p.csv`
 - `outputs/possession_debug_30s_720p.mp4`
 - `outputs/possession_qa_summary.md`
-- `outputs/possession_debug_30s_720p.csv`
-- `outputs/possession_debug_30s_720p.mp4`
-- `outputs/possession_qa_summary.md`
 
 Current 720p QA summary:
 
@@ -379,7 +376,7 @@ With a soccer-specific ball model:
 python scripts/run_720p_clip_pipeline.py --detect-ball --ball-model path/to/ball_model.pt --ball-conf 0.10 --ball-imgsz 1280
 ```
 
-Generated outputs include:
+Expected generated outputs include:
 
 - `data/sample_30s_720p.mp4`
 - `outputs/tracked_30s_720p.mp4`
@@ -388,6 +385,7 @@ Generated outputs include:
 - `outputs/heatmap_all_720p.png`
 - `outputs/trajectories_all_720p.png`
 - `outputs/player_stats_30s_720p.csv`
+- `outputs/player_stats_30s_720p.xlsx`
 - `outputs/player_teams_30s_720p.csv`
 - `outputs/team_tracked_30s_720p.mp4`
 - `outputs/heatmap_team_a_720p.png`
@@ -416,6 +414,10 @@ Optional ball outputs:
 - `outputs/possession_summary_30s_720p.csv`
 - `outputs/possession_summary_30s_720p.md`
 - `outputs/possession_30s_720p.mp4`
+- `outputs/possession_debug_30s_720p.csv`
+- `outputs/possession_debug_30s_720p.mp4`
+- `outputs/possession_qa_summary.md`
+- `outputs/possession_qa_frames/`
 
 Team classification is a non-training heuristic. It samples only the central
 upper-body region of each tracked box, rejects grass-heavy or low-quality crops,
@@ -456,3 +458,12 @@ sports-analytics-project/
 - `data/` and `outputs/` are ignored except for `.gitkeep` placeholders.
 - `.venv/`, Python caches, generated model weights, and local FFmpeg artifacts are ignored.
 - Keep videos, datasets, generated outputs, and model weights out of Git.
+
+Generated artifacts are intentionally not committed. After cloning or merging,
+regenerate the local 720p data and outputs with:
+
+```powershell
+python scripts\run_720p_clip_pipeline.py --detect-ball
+```
+
+This requires the SoccerNet source video to exist locally under `data/SoccerNet/`.
