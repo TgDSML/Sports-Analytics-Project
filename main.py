@@ -198,7 +198,7 @@ def process_video(
 
     writer = cv2.VideoWriter(
         str(output_path),
-        cv2.VideoWriter_fourcc(*"mp4v"),
+        cv2.VideoWriter_fourcc(*"avc1"),
         fps,
         (width, height),
     )
@@ -323,7 +323,7 @@ def process_video_bytetrack(
 
     writer = cv2.VideoWriter(
         str(output_path),
-        cv2.VideoWriter_fourcc(*"mp4v"),
+        cv2.VideoWriter_fourcc(*"avc1"),
         fps,
         (width, height),
     )

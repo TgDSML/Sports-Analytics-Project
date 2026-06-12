@@ -186,7 +186,7 @@ def process_ball_detection_video(
 
     writer = cv2.VideoWriter(
         str(output_video_path),
-        cv2.VideoWriter_fourcc(*"mp4v"),
+        cv2.VideoWriter_fourcc(*"avc1"),
         fps,
         (width, height),
     )
