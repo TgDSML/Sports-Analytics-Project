@@ -153,6 +153,17 @@ def run_analytics(
         "possession_video": Path("outputs/possession_30s_720p.mp4"),
         "possession_debug_video": Path("outputs/possession_debug_30s_720p.mp4"),
         "possession_qa_summary": Path("outputs/possession_qa_summary.md"),
+        "carry_events_csv": Path("outputs/carry_events_30s_720p.csv"),
+        "carry_summary_csv": Path("outputs/carry_summary_30s_720p.csv"),
+        "carry_summary_md": Path("outputs/carry_summary_30s_720p.md"),
+        "carry_maps_dir": Path("outputs/carry_maps"),
+        "interceptions_csv": Path("outputs/interceptions_30s_720p.csv"),
+        "interceptions_summary_csv": Path("outputs/interceptions_summary_30s_720p.csv"),
+        "interceptions_summary_md": Path("outputs/interceptions_summary_30s_720p.md"),
+        "interception_maps_dir": Path("outputs/interception_maps"),
+        "passing_summary_csv": Path("outputs/passing_summary_30s_720p.csv"),
+        "passing_summary_md": Path("outputs/passing_summary_30s_720p.md"),
+        "passing_maps_dir": Path("outputs/passing_maps"),
     }
 
     main_command = [
@@ -398,11 +409,99 @@ def run_analytics(
             possession_command.append("--assign-interpolated")
         run_command(possession_command)
 
+        run_command(
+            [
+                python,
+                "-m",
+                "src.analytics.carries",
+                "--possession-csv",
+                str(outputs["possession_csv"]),
+                "--possession-debug-csv",
+                str(outputs["possession_debug_csv"]),
+                "--player-tracks-csv",
+                str(outputs["tracks_csv"]),
+                "--output-csv",
+                str(outputs["carry_events_csv"]),
+                "--summary-csv",
+                str(outputs["carry_summary_csv"]),
+                "--summary-md",
+                str(outputs["carry_summary_md"]),
+            ]
+        )
+        run_command(
+            [
+                python,
+                "-m",
+                "src.analytics.carry_map",
+                "--carry-events-csv",
+                str(outputs["carry_events_csv"]),
+                "--output-dir",
+                str(outputs["carry_maps_dir"]),
+            ]
+        )
+        run_command(
+            [
+                python,
+                "-m",
+                "src.analytics.interceptions",
+                "--possession-csv",
+                str(outputs["possession_csv"]),
+                "--possession-debug-csv",
+                str(outputs["possession_debug_csv"]),
+                "--output-csv",
+                str(outputs["interceptions_csv"]),
+                "--summary-csv",
+                str(outputs["interceptions_summary_csv"]),
+                "--summary-md",
+                str(outputs["interceptions_summary_md"]),
+            ]
+        )
+        run_command(
+            [
+                python,
+                "-m",
+                "src.analytics.interception_map",
+                "--interceptions-csv",
+                str(outputs["interceptions_csv"]),
+                "--output-dir",
+                str(outputs["interception_maps_dir"]),
+            ]
+        )
+        run_command(
+            [
+                python,
+                "-m",
+                "src.analytics.passing_stats",
+                "--possession-csv",
+                str(outputs["possession_csv"]),
+                "--output-csv",
+                str(outputs["passing_summary_csv"]),
+                "--output-md",
+                str(outputs["passing_summary_md"]),
+            ]
+        )
+        run_command(
+            [
+                python,
+                "-m",
+                "src.analytics.generate_passing_network",
+                "--possession-csv",
+                str(outputs["possession_csv"]),
+                "--possession-debug-csv",
+                str(outputs["possession_debug_csv"]),
+                "--output-dir",
+                str(outputs["passing_maps_dir"]),
+            ]
+        )
+
     print("720p analytics outputs:")
     for output_name, output_path in outputs.items():
         if (
             output_name.startswith("ball_")
             or output_name.startswith("possession_")
+            or output_name.startswith("carry_")
+            or output_name.startswith("interception")
+            or output_name.startswith("passing_")
         ) and not detect_ball:
             continue
         print(f"- {output_path}")

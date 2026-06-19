@@ -1,0 +1,67 @@
+data:
+  soccernet_dir: data/SoccerNet
+  manifest_path: data/manifests/dataset_manifest.csv
+  splits:
+    - valid
+  competition_prefix: england_epl/
+  sample_size: 10
+  random_seed: 42
+
+video:
+  resolution: 720p
+  target_height: 720
+  target_fps: 30
+  clip_duration_seconds: 30
+
+models:
+  player_model: yolov8n.pt
+  ball_model: yolov8n.pt
+
+detection:
+  conf: 0.15
+  imgsz: 640
+  tracker_type: bytetrack
+
+ball_detection:
+  enabled: true
+  conf: 0.10
+  imgsz: 1280
+  min_area: 20
+  max_area: 500
+  min_width: 4
+  max_width: 30
+  min_height: 4
+  max_height: 30
+  max_detections_per_frame: 1
+  exclude_top_ratio: 0.08
+  exclude_bottom_ratio: 0.0
+  debug_frame_stride: 0
+
+ball_tracking:
+  max_distance: 90.0
+  max_gap: 8
+
+possession:
+  max_player_ball_distance: 80.0
+  min_track_confidence: 0.10
+  min_ball_confidence: 0.25
+  switch_confirmation_frames: 3
+  assign_interpolated: false
+
+carries:
+  enabled: true
+
+interceptions:
+  enabled: true
+
+passes:
+  enabled: true
+
+tactical:
+  top_tracks: 5
+
+runtime:
+  continue_on_error: true
+  overwrite_outputs: true
+  save_debug_video: true
+  outputs_dir: outputs
