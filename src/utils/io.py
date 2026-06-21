@@ -32,6 +32,8 @@ TRACK_CSV_COLUMNS = [
     "y2",
     "center_x",
     "center_y",
+    "width",
+    "height",
 ]
 
 BALL_DETECTION_CSV_COLUMNS = [

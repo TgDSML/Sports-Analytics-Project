@@ -924,6 +924,7 @@ def _select_goalkeeper_candidates(
     for _, group in candidates.groupby("side"):
         best = group.sort_values(["role_score", "track_frames"], ascending=False).head(1)
         if not best.empty and float(best.iloc[0]["role_score"]) >= 0.45:
+            best.attrs = {}
             selected.append(best)
     return pd.concat(selected) if selected else candidates.iloc[0:0]
 

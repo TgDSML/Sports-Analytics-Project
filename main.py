@@ -41,6 +41,8 @@ def build_track_row(track, frame_index: int, fps: float) -> dict:
     """Build one CSV-ready row from an active track."""
     x1, y1, x2, y2 = track.bbox
     center_x, center_y = track.centroid
+    width = x2 - x1
+    height = y2 - y1
 
     return {
         "frame": frame_index,
@@ -54,6 +56,8 @@ def build_track_row(track, frame_index: int, fps: float) -> dict:
         "y2": y2,
         "center_x": center_x,
         "center_y": center_y,
+        "width": width,
+        "height": height,
     }
 
 
@@ -417,6 +421,8 @@ def process_video_bytetrack(
                         "y2": y2,
                         "center_x": center_x,
                         "center_y": center_y,
+                        "width": width_box,
+                        "height": height_box,
                     }
                 )
 

@@ -34,7 +34,9 @@ POSSESSION_DEBUG_COLUMNS = [
     "nearest_player_confidence",
     "nearest_player_center_x",
     "nearest_player_center_y",
+    "nearest_player_box_height",
     "distance_to_ball",
+    "dynamic_distance_threshold",
     "possession_reason",
 ]
 
@@ -51,7 +53,7 @@ def estimate_possession(
     summary_md_path: Path,
     debug_csv_path: Path,
     qa_summary_md_path: Path,
-    max_player_ball_distance: float = 80.0,
+    dynamic_distance_multiplier: float = 1.5,
     min_track_confidence: float = 0.10,
     min_ball_confidence: float = 0.25,
     assign_interpolated: bool = False,
@@ -59,10 +61,7 @@ def estimate_possession(
     eligible_roles: set[str] | None = None,
 ) -> dict:
     """Estimate frame-level possession with conservative QA gates."""
-    player_tracks = _read_csv(
-        player_tracks_csv_path,
-        required={"frame", "track_id", "center_x", "center_y", "confidence"},
-    )
+    player_tracks = _read_player_tracks(player_tracks_csv_path)
     ball_tracks = _read_csv(
         ball_tracks_csv_path,
         required={"track_id", "frame", "timestamp", "center_x", "center_y", "confidence", "is_interpolated"},
@@ -80,7 +79,7 @@ def estimate_possession(
         ball_tracks=ball_tracks,
         players_by_frame=players_by_frame,
         team_info=team_info,
-        max_player_ball_distance=max_player_ball_distance,
+        dynamic_distance_multiplier=dynamic_distance_multiplier,
         min_ball_confidence=min_ball_confidence,
         assign_interpolated=assign_interpolated,
     )
@@ -94,7 +93,7 @@ def estimate_possession(
     _write_qa_summary(
         summary=summary,
         qa_summary_md_path=qa_summary_md_path,
-        max_player_ball_distance=max_player_ball_distance,
+        dynamic_distance_multiplier=dynamic_distance_multiplier,
         min_track_confidence=min_track_confidence,
         min_ball_confidence=min_ball_confidence,
         assign_interpolated=assign_interpolated,
@@ -171,7 +170,7 @@ def _build_candidate_rows(
     ball_tracks: list[dict],
     players_by_frame: dict[int, list[dict]],
     team_info: dict[int, dict[str, str]],
-    max_player_ball_distance: float,
+    dynamic_distance_multiplier: float,
     min_ball_confidence: float,
     assign_interpolated: bool,
 ) -> list[dict]:
@@ -181,7 +180,8 @@ def _build_candidate_rows(
         ball_confidence = float(ball.get("confidence") or 0.0)
         is_interpolated = _truthy(ball.get("is_interpolated"))
         nearest = _nearest_player(ball, players_by_frame.get(frame, []))
-        row = _base_debug_row(ball, nearest, team_info)
+        dynamic_threshold = _dynamic_distance_threshold(nearest, dynamic_distance_multiplier)
+        row = _base_debug_row(ball, nearest, team_info, dynamic_threshold)
 
         if is_interpolated and not assign_interpolated:
             row["candidate_team"] = "None"
@@ -192,7 +192,7 @@ def _build_candidate_rows(
         elif nearest is None:
             row["candidate_team"] = "None"
             row["possession_reason"] = "no_eligible_player_in_frame"
-        elif nearest["distance"] > max_player_ball_distance:
+        elif dynamic_threshold is None or nearest["distance"] > dynamic_threshold:
             row["candidate_team"] = "None"
             row["possession_reason"] = "nearest_player_too_far"
         else:
@@ -202,7 +202,12 @@ def _build_candidate_rows(
     return rows
 
 
-def _base_debug_row(ball: dict, nearest: dict | None, team_info: dict[int, dict[str, str]]) -> dict:
+def _base_debug_row(
+    ball: dict,
+    nearest: dict | None,
+    team_info: dict[int, dict[str, str]],
+    dynamic_threshold: float | None,
+) -> dict:
     nearest_player = nearest["player"] if nearest else None
     nearest_id = int(nearest_player["track_id"]) if nearest_player else ""
     nearest_info = team_info.get(nearest_id, {"team": "Unknown", "role": "unknown"}) if nearest_player else {}
@@ -228,7 +233,11 @@ def _base_debug_row(ball: dict, nearest: dict | None, team_info: dict[int, dict[
         "nearest_player_center_y": (
             f"{float(nearest_player['center_y']):.2f}" if nearest_player else ""
         ),
+        "nearest_player_box_height": (
+            f"{float(nearest_player['box_height']):.2f}" if nearest_player else ""
+        ),
         "distance_to_ball": f"{nearest['distance']:.2f}" if nearest else "",
+        "dynamic_distance_threshold": f"{dynamic_threshold:.2f}" if dynamic_threshold is not None else "",
         "possession_reason": "",
     }
 
@@ -303,6 +312,27 @@ def _read_csv(path: Path, required: set[str]) -> list[dict]:
         return list(reader)
 
 
+def _read_player_tracks(path: Path) -> list[dict]:
+    if not path.exists():
+        raise FileNotFoundError(f"CSV not found: {path}")
+    with path.open(newline="", encoding="utf-8") as csv_file:
+        reader = csv.DictReader(csv_file)
+        fieldnames = set(reader.fieldnames or [])
+        missing = {"frame", "track_id", "center_x", "center_y", "confidence"} - fieldnames
+        if missing:
+            raise ValueError(f"{path} missing column(s): {', '.join(sorted(missing))}")
+        if "box_height" in fieldnames:
+            height_column = "box_height"
+        elif "height" in fieldnames:
+            height_column = "height"
+        else:
+            raise ValueError(f"{path} missing column(s): box_height or height")
+        rows = list(reader)
+    for row in rows:
+        row["box_height"] = row.get(height_column)
+    return rows
+
+
 def _read_team_assignments(path: Path) -> dict[int, dict[str, str]]:
     rows = _read_csv(path, required={"track_id", "team"})
     result = {}
@@ -327,6 +357,12 @@ def _nearest_player(ball: dict, players: list[dict]) -> dict | None:
         if nearest is None or distance < nearest["distance"]:
             nearest = {"player": player, "distance": distance}
     return nearest
+
+
+def _dynamic_distance_threshold(nearest: dict | None, dynamic_distance_multiplier: float) -> float | None:
+    if nearest is None:
+        return None
+    return float(nearest["player"]["box_height"]) * dynamic_distance_multiplier
 
 
 def _write_rows(rows: list[dict], path: Path, columns: list[str]) -> None:
@@ -422,7 +458,7 @@ def _write_summary(summary: dict, csv_path: Path, md_path: Path) -> None:
 def _write_qa_summary(
     summary: dict,
     qa_summary_md_path: Path,
-    max_player_ball_distance: float,
+    dynamic_distance_multiplier: float,
     min_track_confidence: float,
     min_ball_confidence: float,
     assign_interpolated: bool,
@@ -439,7 +475,7 @@ def _write_qa_summary(
         "",
         "## Current Gates",
         "",
-        f"- max_player_ball_distance: {max_player_ball_distance}",
+        f"- dynamic_distance_multiplier: {dynamic_distance_multiplier}",
         f"- min_track_confidence: {min_track_confidence}",
         f"- min_ball_confidence: {min_ball_confidence}",
         f"- assign_interpolated: {assign_interpolated}",
@@ -522,6 +558,7 @@ def _draw_possession_overlay(frame, frame_index: int, row: dict, debug: bool) ->
             [
                 f"Candidate: {row.get('candidate_team', team)}",
                 f"Distance: {row.get('distance_to_ball') or 'n/a'}",
+                f"Threshold: {row.get('dynamic_distance_threshold') or 'n/a'}",
                 f"Ball conf: {row.get('ball_confidence') or 'n/a'}",
                 f"Interpolated: {row.get('is_interpolated') or 0}",
                 f"Reason: {_short_reason(row.get('possession_reason', ''))}",
@@ -630,7 +667,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--debug-csv", type=Path, default=Path("outputs/possession_debug_30s_720p.csv"))
     parser.add_argument("--debug-video", type=Path, default=Path("outputs/possession_debug_30s_720p.mp4"))
     parser.add_argument("--qa-summary-md", type=Path, default=Path("outputs/possession_qa_summary.md"))
-    parser.add_argument("--max-player-ball-distance", type=float, default=80.0)
+    parser.add_argument("--dynamic-distance-multiplier", type=float, default=1.5)
     parser.add_argument("--min-track-confidence", type=float, default=0.10)
     parser.add_argument("--min-ball-confidence", type=float, default=0.25)
     parser.add_argument(
@@ -653,7 +690,7 @@ def main() -> int:
         summary_md_path=args.summary_md,
         debug_csv_path=args.debug_csv,
         qa_summary_md_path=args.qa_summary_md,
-        max_player_ball_distance=args.max_player_ball_distance,
+        dynamic_distance_multiplier=args.dynamic_distance_multiplier,
         min_track_confidence=args.min_track_confidence,
         min_ball_confidence=args.min_ball_confidence,
         assign_interpolated=args.assign_interpolated,

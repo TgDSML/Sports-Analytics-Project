@@ -19,7 +19,7 @@ The current pipeline supports:
 - Optional ball detection baseline with separate ball CSV and annotated video outputs.
 - Ball tracking from filtered ball detections with short-gap interpolation.
 - Baseline possession estimation from nearest player-to-ball distance and team labels.
-- A 720p SoccerNet clip pipeline that cuts a 30-second sample and regenerates the main outputs.
+- A config-driven 720p SoccerNet clip pipeline that cuts a 30-second sample and writes per-match output folders.
 
 ## Current Repository Shape
 
@@ -28,8 +28,6 @@ The current pipeline supports:
 - `src/tracking/`: centroid tracker fallback and ball tracking.
 - `src/analytics/`: heatmaps, trajectories, player stats, jersey-color team classification, and possession estimation.
 - `src/utils/`: CSV and video helper functions.
-- `scripts/download_soccernet_video.py`: downloads a small SoccerNet validation sample.
-- `scripts/run_720p_clip_pipeline.py`: runs the full 720p clip workflow.
 - `data/`: local videos and downloaded SoccerNet data, ignored by Git.
 - `outputs/`: generated videos, CSVs, plots, and debug artifacts, ignored by Git.
 
@@ -104,41 +102,12 @@ python -m src.analytics.trajectories --tracks-csv outputs/tracks_30s_720p.csv --
 python -m src.analytics.player_stats --tracks-csv outputs/tracks_30s_720p.csv --output outputs/player_stats_30s_720p.csv --excel-output outputs/player_stats_30s_720p.xlsx
 ```
 
-Run the full 720p pipeline when the SoccerNet source video is available:
+Run the full 720p pipeline when a SoccerNet source video is available:
 
-```bash
-python scripts/run_720p_clip_pipeline.py
+```powershell
+.\venv\Scripts\python.exe -m src.pipeline.run_clip --config configs\default_pipeline.yaml --video "data\SoccerNet\england_epl\2015-2016\2015-09-26 - 17-00 Manchester United 3 - 0 Sunderland\1_720p.mkv" --clip-id england_epl__2015_2016__2015_09_26___17_00_Manchester_United_3___0_Sunderland__h1_720p_golden_test
 ```
 
-Run the same pipeline with the opt-in ball detection baseline:
-
-```bash
-python scripts/run_720p_clip_pipeline.py --detect-ball
-```
-
-Expected ball QA outputs:
-
-- `outputs/ball_detections_raw_30s_720p.csv`
-- `outputs/ball_detections_filtered_30s_720p.csv`
-- `outputs/ball_detected_filtered_30s_720p.mp4`
-- `outputs/ball_debug/ball_detection_summary.csv`
-- `outputs/ball_debug/ball_detection_summary.md`
-- `outputs/ball_tracks_30s_720p.csv`
-- `outputs/ball_tracked_30s_720p.mp4`
-- `outputs/ball_debug/ball_tracking_summary.csv`
-- `outputs/ball_debug/ball_tracking_summary.md`
-- `outputs/possession_30s_720p.csv`
-- `outputs/possession_summary_30s_720p.csv`
-- `outputs/possession_summary_30s_720p.md`
-- `outputs/possession_30s_720p.mp4`
-- `outputs/possession_debug_30s_720p.csv`
-- `outputs/possession_debug_30s_720p.mp4`
-- `outputs/possession_qa_summary.md`
-
-Use a soccer-specific or fine-tuned ball model when available:
-
-```bash
-python scripts/run_720p_clip_pipeline.py --detect-ball --ball-model path/to/ball_model.pt --ball-conf 0.10 --ball-imgsz 1280
-```
+Expected outputs are written under `outputs/<clip_id>/`, including `detections/`, `tracks/`, `teams/`, `possession/`, `carries/`, `interceptions/`, `tactical/`, `visualizations/`, and `logs/`.
 
 The next recommended step for ball analytics is replacing the generic model with a soccer-specific ball detector or a fine-tuned YOLO model. Pass detection, event detection, homography, and tactical analytics should wait until ball detection and ball tracking are reliable.

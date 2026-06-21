@@ -418,7 +418,7 @@ def process_clip(row: ManifestRow, config: dict[str, Any]) -> ClipRunResult:
 
     if bool(get_config_value(config, "ball_detection.enabled", False)):
         if bool(get_config_value(config, "carries.enabled", True)):
-            for stage_name, command in _carry_stage_commands(python, paths):
+            for stage_name, command in _carry_stage_commands(python, paths, config):
                 result = run_command(command, dirs["logs"] / f"{stage_name}.log")
                 result.stage = stage_name
                 stages.append(result)
@@ -503,18 +503,18 @@ def _ball_stage_commands(
                 str(paths["possession_video"]),
                 "--debug-video",
                 str(paths["possession_debug_video"]),
-                "--max-player-ball-distance",
-                str(get_config_value(config, "possession.max_player_ball_distance", 80.0)),
+                "--dynamic-distance-multiplier",
+                str(get_config_value(config, "possession.dynamic_distance_multiplier", 1.5)),
                 "--min-track-confidence",
                 str(get_config_value(config, "possession.min_track_confidence", 0.10)),
                 "--min-ball-confidence",
-                str(get_config_value(config, "possession.min_ball_confidence", 0.25)),
+                str(get_config_value(config, "possession.min_ball_confidence", 0.10)),
                 "--switch-confirmation-frames",
-                str(get_config_value(config, "possession.switch_confirmation_frames", 3)),
+                str(get_config_value(config, "possession.switch_confirmation_frames", 2)),
             ],
         ),
     ]
-    if bool(get_config_value(config, "possession.assign_interpolated", False)):
+    if bool(get_config_value(config, "possession.assign_interpolated", True)):
         commands[-1][1].append("--assign-interpolated")
     return commands
 
@@ -522,6 +522,7 @@ def _ball_stage_commands(
 def _carry_stage_commands(
     python: str,
     paths: dict[str, Path],
+    config: dict,
 ) -> list[tuple[str, list[str]]]:
     return [
         (
@@ -542,6 +543,8 @@ def _carry_stage_commands(
                 str(paths["carries_summary_csv"]),
                 "--summary-md",
                 str(paths["carries_summary_md"]),
+                "--carry-distance-multiplier",
+                str(get_config_value(config, "carries.carry_distance_multiplier", 0.8)),
             ],
         ),
         (

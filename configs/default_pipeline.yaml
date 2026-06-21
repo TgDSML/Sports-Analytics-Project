@@ -42,14 +42,15 @@ ball_tracking:
   max_gap: 8
 
 possession:
-  max_player_ball_distance: 80.0
+  dynamic_distance_multiplier: 1.5
   min_track_confidence: 0.10
-  min_ball_confidence: 0.25
-  switch_confirmation_frames: 3
-  assign_interpolated: false
+  min_ball_confidence: 0.10
+  switch_confirmation_frames: 2
+  assign_interpolated: true
 
 carries:
   enabled: true
+  carry_distance_multiplier: 0.8
 
 interceptions:
   enabled: true

@@ -55,37 +55,93 @@ def _successful_passes_for_team(
     debug_by_frame: pd.DataFrame,
     team_name: str,
 ) -> list[dict]:
-    active = possession_df[possession_df["team"].isin(["Team A", "Team B"])].copy()
-    if active.empty:
-        return []
-
-    active = active.dropna(subset=["nearest_player_id"]).copy()
-    if active.empty:
-        return []
-
-    active["nearest_player_id"] = active["nearest_player_id"].astype(int)
-    player_changed = active["nearest_player_id"] != active["nearest_player_id"].shift()
-    transfers = active[player_changed].copy()
+    frame_possession = _frame_level_possession(possession_df)
+    segments = _stable_possession_segments(frame_possession)
     passes = []
-
-    previous = None
-    for _, current in transfers.iterrows():
-        if previous is not None and previous["team"] == current["team"] == team_name:
-            if int(previous["nearest_player_id"]) != int(current["nearest_player_id"]):
-                start = _player_point(debug_by_frame, int(previous["frame"]))
-                end = _player_point(debug_by_frame, int(current["frame"]))
-                if start is not None and end is not None:
-                    passes.append(
-                        {
-                            "from_player": int(previous["nearest_player_id"]),
-                            "to_player": int(current["nearest_player_id"]),
-                            "start": start,
-                            "end": end,
-                        }
-                    )
-        previous = current
-
+    for previous, current in zip(segments, segments[1:]):
+        if previous["team"] != current["team"] or current["team"] != team_name:
+            continue
+        if previous["player_id"] == current["player_id"]:
+            continue
+        if current["start_time"] - previous["end_time"] > 2.0:
+            continue
+        start = _player_point(debug_by_frame, int(previous["end_frame"]))
+        end = _player_point(debug_by_frame, int(current["start_frame"]))
+        if start is not None and end is not None:
+            passes.append(
+                {
+                    "from_player": int(previous["player_id"]),
+                    "to_player": int(current["player_id"]),
+                    "start": start,
+                    "end": end,
+                }
+            )
     return passes
+
+
+def _frame_level_possession(possession_df: pd.DataFrame) -> pd.DataFrame:
+    rows = []
+    for frame, group in possession_df.sort_values(["frame", "timestamp"]).groupby("frame", sort=True):
+        active = group[group["team"].isin(["Team A", "Team B"])].dropna(subset=["nearest_player_id"])
+        if active.empty:
+            first = group.iloc[0]
+            rows.append({"frame": int(frame), "timestamp": float(first["timestamp"]), "team": "None", "nearest_player_id": pd.NA})
+            continue
+        active = active.copy()
+        active["distance_to_ball"] = pd.to_numeric(active["distance_to_ball"], errors="coerce")
+        chosen = active.sort_values(["distance_to_ball", "timestamp"], na_position="last").iloc[0]
+        rows.append(
+            {
+                "frame": int(frame),
+                "timestamp": float(chosen["timestamp"]),
+                "team": str(chosen["team"]),
+                "nearest_player_id": int(chosen["nearest_player_id"]),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _stable_possession_segments(frame_possession: pd.DataFrame) -> list[dict]:
+    segments = []
+    current = None
+    for row in frame_possession.itertuples(index=False):
+        player_id = None if pd.isna(row.nearest_player_id) else int(row.nearest_player_id)
+        owner = (row.team, player_id) if row.team in {"Team A", "Team B"} and player_id is not None else None
+        if owner is None:
+            if current is not None:
+                _append_segment(segments, current)
+                current = None
+            continue
+        if current is None or current["team"] != owner[0] or current["player_id"] != owner[1]:
+            if current is not None:
+                _append_segment(segments, current)
+            current = {
+                "team": owner[0],
+                "player_id": owner[1],
+                "start_frame": int(row.frame),
+                "end_frame": int(row.frame),
+                "start_time": float(row.timestamp),
+                "end_time": float(row.timestamp),
+                "frames": 1,
+            }
+        else:
+            current["end_frame"] = int(row.frame)
+            current["end_time"] = float(row.timestamp)
+            current["frames"] += 1
+    if current is not None:
+        _append_segment(segments, current)
+    return segments
+
+
+def _append_segment(segments: list[dict], segment: dict) -> None:
+    duration = max(0.0, float(segment["end_time"]) - float(segment["start_time"]))
+    if segment["frames"] < 6:
+        return
+    if duration < 0.20:
+        return
+    stable = dict(segment)
+    stable["duration"] = duration
+    segments.append(stable)
 
 
 def _player_point(debug_by_frame: pd.DataFrame, frame: int) -> tuple[float, float] | None:

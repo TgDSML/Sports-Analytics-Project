@@ -60,41 +60,14 @@ chmod +x setup.sh
 ./setup.sh
 ```
 
-## Download SoccerNet Sample
+## Local SoccerNet Data
 
-Download a small 224p SoccerNet sample:
+Place local SoccerNet videos under `data/SoccerNet/`. The orchestrated pipeline expects a real video path via `--video` and writes all generated artifacts under a per-clip folder in `outputs/`.
 
-```bash
-python scripts/download_soccernet_video.py
-```
+Example source path:
 
-The default is equivalent to:
-
-```bash
-python scripts/download_soccernet_video.py --resolution 224p
-```
-
-Download the 720p version of the same small validation sample:
-
-```bash
-python scripts/download_soccernet_video.py --resolution 720p
-```
-
-For `224p`, the script downloads `1_224p.mkv` and `2_224p.mkv`. For `720p`, it downloads `1_720p.mkv` and `2_720p.mkv`. It downloads only one `valid` split game into `data/SoccerNet/` and does not download the full dataset.
-
-If you need to override the default SoccerNet password, set `SOCCERNET_PASSWORD` before running the script.
-
-Windows PowerShell:
-
-```powershell
-$env:SOCCERNET_PASSWORD="your-password"
-python scripts/download_soccernet_video.py --resolution 224p
-```
-
-Linux/macOS:
-
-```bash
-SOCCERNET_PASSWORD="your-password" python scripts/download_soccernet_video.py --resolution 224p
+```text
+data/SoccerNet/england_epl/2015-2016/2015-09-26 - 17-00 Manchester United 3 - 0 Sunderland/1_720p.mkv
 ```
 
 ## Run YOLO Baseline
@@ -358,66 +331,26 @@ Generated outputs:
 
 ## SoccerNet 720p Clip Pipeline
 
-If `1_720p.mkv` exists under `data/SoccerNet/`, cut a 30-second 720p clip and rerun detection, tracking, movement analytics, player stats, and team classification with `_720p` output names:
+Use `src.pipeline.run_clip` for the end-to-end 720p workflow. It cuts the clip, runs player and ball detection/tracking, assigns teams, estimates possession, and creates carries, interceptions, passing summaries, passing maps, videos, logs, and QA reports inside one per-match output folder.
 
-```bash
-python scripts/run_720p_clip_pipeline.py
+PowerShell example:
+
+```powershell
+.\venv\Scripts\python.exe -m src.pipeline.run_clip --config configs\default_pipeline.yaml --video "data\SoccerNet\england_epl\2015-2016\2015-09-26 - 17-00 Manchester United 3 - 0 Sunderland\1_720p.mkv" --clip-id england_epl__2015_2016__2015_09_26___17_00_Manchester_United_3___0_Sunderland__h1_720p_golden_test
 ```
 
-Optionally include ball detection on the same 720p clip:
+Expected output layout:
 
-```bash
-python scripts/run_720p_clip_pipeline.py --detect-ball
-```
-
-With a soccer-specific ball model:
-
-```bash
-python scripts/run_720p_clip_pipeline.py --detect-ball --ball-model path/to/ball_model.pt --ball-conf 0.10 --ball-imgsz 1280
-```
-
-Expected generated outputs include:
-
-- `data/sample_30s_720p.mp4`
-- `outputs/tracked_30s_720p.mp4`
-- `outputs/detections_30s_720p.csv`
-- `outputs/tracks_30s_720p.csv`
-- `outputs/heatmap_all_720p.png`
-- `outputs/trajectories_all_720p.png`
-- `outputs/player_stats_30s_720p.csv`
-- `outputs/player_stats_30s_720p.xlsx`
-- `outputs/player_teams_30s_720p.csv`
-- `outputs/team_tracked_30s_720p.mp4`
-- `outputs/heatmap_team_a_720p.png`
-- `outputs/heatmap_team_b_720p.png`
-- `outputs/team_debug/team_assignments.csv`
-- `outputs/team_debug/role_assignments.csv`
-- `outputs/team_debug/movement_summary.csv`
-- `outputs/team_debug/color_clusters.csv`
-- `outputs/team_debug/color_clusters_palette.png`
-- `outputs/team_debug/team_palette.png`
-- `outputs/team_debug/crops/`
-- `outputs/team_debug/role_crops/`
-
-Optional ball outputs:
-
-- `outputs/ball_detections_raw_30s_720p.csv`
-- `outputs/ball_detections_filtered_30s_720p.csv`
-- `outputs/ball_detected_filtered_30s_720p.mp4`
-- `outputs/ball_debug/ball_detection_summary.csv`
-- `outputs/ball_debug/ball_detection_summary.md`
-- `outputs/ball_tracks_30s_720p.csv`
-- `outputs/ball_tracked_30s_720p.mp4`
-- `outputs/ball_debug/ball_tracking_summary.csv`
-- `outputs/ball_debug/ball_tracking_summary.md`
-- `outputs/possession_30s_720p.csv`
-- `outputs/possession_summary_30s_720p.csv`
-- `outputs/possession_summary_30s_720p.md`
-- `outputs/possession_30s_720p.mp4`
-- `outputs/possession_debug_30s_720p.csv`
-- `outputs/possession_debug_30s_720p.mp4`
-- `outputs/possession_qa_summary.md`
-- `outputs/possession_qa_frames/`
+- `outputs/<clip_id>/preprocessed/clip.mp4`
+- `outputs/<clip_id>/detections/`
+- `outputs/<clip_id>/tracks/`
+- `outputs/<clip_id>/teams/`
+- `outputs/<clip_id>/possession/`
+- `outputs/<clip_id>/carries/`
+- `outputs/<clip_id>/interceptions/`
+- `outputs/<clip_id>/tactical/passing_maps/`
+- `outputs/<clip_id>/visualizations/`
+- `outputs/<clip_id>/logs/`
 
 Team classification is a non-training heuristic. It samples only the central
 upper-body region of each tracked box, rejects grass-heavy or low-quality crops,
@@ -459,11 +392,4 @@ sports-analytics-project/
 - `.venv/`, Python caches, generated model weights, and local FFmpeg artifacts are ignored.
 - Keep videos, datasets, generated outputs, and model weights out of Git.
 
-Generated artifacts are intentionally not committed. After cloning or merging,
-regenerate the local 720p data and outputs with:
-
-```powershell
-python scripts\run_720p_clip_pipeline.py --detect-ball
-```
-
-This requires the SoccerNet source video to exist locally under `data/SoccerNet/`.
+Generated artifacts are intentionally not committed. After cloning or merging, regenerate local outputs with `src.pipeline.run_clip` and a local source video under `data/SoccerNet/`.

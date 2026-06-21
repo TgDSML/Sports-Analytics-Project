@@ -22,6 +22,8 @@ CARRY_COLUMNS = [
     "player_distance_px",
     "mean_distance_to_ball",
     "max_distance_to_ball",
+    "mean_player_box_height",
+    "carry_distance_threshold",
     "interpolated_frame_count",
     "carry_quality_flag",
 ]
@@ -41,7 +43,7 @@ def estimate_carries(
     min_ball_distance_px: float = 20.0,
     min_player_distance_px: float = 10.0,
     max_frame_gap: int = 1,
-    max_mean_distance_to_ball: float = 80.0,
+    carry_distance_multiplier: float = 0.8,
     max_interpolated_share: float = 0.5,
 ) -> dict:
     possession_rows = _read_csv(
@@ -55,10 +57,7 @@ def estimate_carries(
             "nearest_player_id", "distance_to_ball", "team"
         },
     )
-    player_tracks = _read_csv(
-        player_tracks_csv_path,
-        required={"frame", "track_id", "center_x", "center_y"},
-    )
+    player_tracks = _read_player_tracks(player_tracks_csv_path)
 
     debug_by_frame = {int(r["frame"]): r for r in debug_rows}
     player_positions = _player_positions_by_frame(player_tracks)
@@ -70,10 +69,10 @@ def estimate_carries(
         min_carry_duration=min_carry_duration,
         min_ball_distance_px=min_ball_distance_px,
         min_player_distance_px=min_player_distance_px,
-        max_mean_distance_to_ball=max_mean_distance_to_ball,
+        carry_distance_multiplier=carry_distance_multiplier,
         max_interpolated_share=max_interpolated_share,
     )
-    summary = _build_summary(carry_rows)
+    summary = _build_summary(carry_rows, carry_distance_multiplier)
     _write_rows(carry_rows, output_csv_path, CARRY_COLUMNS)
     _write_summary(summary, summary_csv_path, summary_md_path)
     print(f"Carry events CSV saved to: {output_csv_path}")
@@ -101,19 +100,40 @@ def _write_rows(rows: list[dict], path: Path, columns: list[str]) -> None:
         writer.writerows(rows)
 
 
-def _player_positions_by_frame(player_tracks: list[dict]) -> dict[int, dict[int, tuple[float, float]]]:
-    result: dict[int, dict[int, tuple[float, float]]] = defaultdict(dict)
+def _read_player_tracks(path: Path) -> list[dict]:
+    if not path.exists():
+        raise FileNotFoundError(f"CSV not found: {path}")
+    with path.open(newline="", encoding="utf-8") as csv_file:
+        reader = csv.DictReader(csv_file)
+        fieldnames = set(reader.fieldnames or [])
+        missing = {"frame", "track_id", "center_x", "center_y"} - fieldnames
+        if missing:
+            raise ValueError(f"{path} missing column(s): {', '.join(sorted(missing))}")
+        if "box_height" in fieldnames:
+            height_column = "box_height"
+        elif "height" in fieldnames:
+            height_column = "height"
+        else:
+            raise ValueError(f"{path} missing column(s): box_height or height")
+        rows = list(reader)
+    for row in rows:
+        row["box_height"] = row.get(height_column)
+    return rows
+
+
+def _player_positions_by_frame(player_tracks: list[dict]) -> dict[int, dict[int, tuple[float, float, float]]]:
+    result: dict[int, dict[int, tuple[float, float, float]]] = defaultdict(dict)
     for row in player_tracks:
         frame = int(row["frame"])
         track_id = int(row["track_id"])
-        result[frame][track_id] = (float(row["center_x"]), float(row["center_y"]))
+        result[frame][track_id] = (float(row["center_x"]), float(row["center_y"]), float(row["box_height"]))
     return result
 
 
 def _merge_possession_with_debug(
     possession_rows: list[dict],
     debug_by_frame: dict[int, dict],
-    player_positions: dict[int, dict[int, tuple[float, float]]],
+    player_positions: dict[int, dict[int, tuple[float, float, float]]],
 ) -> list[dict]:
     merged = []
     for row in possession_rows:
@@ -138,6 +158,7 @@ def _merge_possession_with_debug(
                 "is_interpolated": _truthy(debug.get("is_interpolated")),
                 "player_x": player_pos[0] if player_pos else None,
                 "player_y": player_pos[1] if player_pos else None,
+                "player_box_height": player_pos[2] if player_pos else None,
             }
         )
     return merged
@@ -187,20 +208,19 @@ def _segments_to_carries(
     min_carry_duration: float,
     min_ball_distance_px: float,
     min_player_distance_px: float,
-    max_mean_distance_to_ball: float,
+    carry_distance_multiplier: float,
     max_interpolated_share: float,
 ) -> list[dict]:
     carries = []
     carry_id = 1
     for segment in segments:
-        features = _compute_segment_features(segment)
+        features = _compute_segment_features(segment, carry_distance_multiplier)
         if not _is_valid_carry(
             features,
             min_carry_frames=min_carry_frames,
             min_carry_duration=min_carry_duration,
             min_ball_distance_px=min_ball_distance_px,
             min_player_distance_px=min_player_distance_px,
-            max_mean_distance_to_ball=max_mean_distance_to_ball,
             max_interpolated_share=max_interpolated_share,
         ):
             continue
@@ -210,10 +230,13 @@ def _segments_to_carries(
     return carries
 
 
-def _compute_segment_features(segment: list[dict]) -> dict:
+def _compute_segment_features(segment: list[dict], carry_distance_multiplier: float) -> dict:
     first = segment[0]
     last = segment[-1]
     distances = [r["distance_to_ball"] for r in segment if r["distance_to_ball"] is not None]
+    box_heights = [r["player_box_height"] for r in segment if r["player_box_height"] is not None]
+    mean_box_height = sum(box_heights) / len(box_heights) if box_heights else 0.0
+    carry_distance_threshold = mean_box_height * carry_distance_multiplier
     interpolated_count = sum(1 for r in segment if r["is_interpolated"])
 
     start_ball = _first_valid_point(segment, "ball")
@@ -230,7 +253,7 @@ def _compute_segment_features(segment: list[dict]) -> dict:
     quality = []
     if interp_share > 0:
         quality.append("contains_interpolation")
-    if distances and sum(distances) / len(distances) > 60:
+    if distances and carry_distance_threshold > 0 and sum(distances) / len(distances) > carry_distance_threshold:
         quality.append("loose_ball_player_distance")
     if not quality:
         quality.append("ok")
@@ -252,6 +275,8 @@ def _compute_segment_features(segment: list[dict]) -> dict:
         "player_distance_px": player_distance,
         "mean_distance_to_ball": sum(distances) / len(distances) if distances else 0.0,
         "max_distance_to_ball": max(distances) if distances else 0.0,
+        "mean_player_box_height": mean_box_height,
+        "carry_distance_threshold": carry_distance_threshold,
         "interpolated_frame_count": interpolated_count,
         "interpolated_share": interp_share,
         "carry_quality_flag": "; ".join(quality),
@@ -264,7 +289,6 @@ def _is_valid_carry(
     min_carry_duration: float,
     min_ball_distance_px: float,
     min_player_distance_px: float,
-    max_mean_distance_to_ball: float,
     max_interpolated_share: float,
 ) -> bool:
     if features["frames"] < min_carry_frames:
@@ -275,7 +299,9 @@ def _is_valid_carry(
         return False
     if features["player_distance_px"] < min_player_distance_px:
         return False
-    if features["mean_distance_to_ball"] > max_mean_distance_to_ball:
+    if features["carry_distance_threshold"] <= 0:
+        return False
+    if features["mean_distance_to_ball"] > features["carry_distance_threshold"]:
         return False
     if features["interpolated_share"] > max_interpolated_share:
         return False
@@ -301,33 +327,43 @@ def _format_carry_row(features: dict) -> dict:
         "player_distance_px": f"{features['player_distance_px']:.2f}",
         "mean_distance_to_ball": f"{features['mean_distance_to_ball']:.2f}",
         "max_distance_to_ball": f"{features['max_distance_to_ball']:.2f}",
+        "mean_player_box_height": f"{features['mean_player_box_height']:.2f}",
+        "carry_distance_threshold": f"{features['carry_distance_threshold']:.2f}",
         "interpolated_frame_count": features["interpolated_frame_count"],
         "carry_quality_flag": features["carry_quality_flag"],
     }
 
 
-def _build_summary(carry_rows: list[dict]) -> dict:
+def _build_summary(carry_rows: list[dict], carry_distance_multiplier: float) -> dict:
     total = len(carry_rows)
     team_counts = Counter(r["team"] for r in carry_rows)
     player_counts = Counter(r["player_id"] for r in carry_rows)
     durations = [float(r["duration_seconds"]) for r in carry_rows]
     ball_distances = [float(r["ball_distance_px"]) for r in carry_rows]
+    box_heights = [float(r["mean_player_box_height"]) for r in carry_rows]
+    thresholds = [float(r["carry_distance_threshold"]) for r in carry_rows]
     return {
         "total_carries": total,
+        "carry_distance_multiplier": carry_distance_multiplier,
         "team_counts": team_counts,
         "player_counts": player_counts,
         "avg_duration_seconds": sum(durations) / len(durations) if durations else 0.0,
         "avg_ball_distance_px": sum(ball_distances) / len(ball_distances) if ball_distances else 0.0,
         "max_ball_distance_px": max(ball_distances) if ball_distances else 0.0,
+        "avg_mean_player_box_height": sum(box_heights) / len(box_heights) if box_heights else 0.0,
+        "avg_carry_distance_threshold": sum(thresholds) / len(thresholds) if thresholds else 0.0,
     }
 
 
 def _write_summary(summary: dict, csv_path: Path, md_path: Path) -> None:
     rows = [
         {"section": "counts", "metric": "total_carries", "value": summary["total_carries"]},
+        {"section": "dynamic_distance", "metric": "carry_distance_multiplier", "value": f"{summary['carry_distance_multiplier']:.2f}"},
         {"section": "metrics", "metric": "avg_duration_seconds", "value": f"{summary['avg_duration_seconds']:.3f}"},
         {"section": "metrics", "metric": "avg_ball_distance_px", "value": f"{summary['avg_ball_distance_px']:.2f}"},
         {"section": "metrics", "metric": "max_ball_distance_px", "value": f"{summary['max_ball_distance_px']:.2f}"},
+        {"section": "dynamic_distance", "metric": "avg_mean_player_box_height", "value": f"{summary['avg_mean_player_box_height']:.2f}"},
+        {"section": "dynamic_distance", "metric": "avg_carry_distance_threshold", "value": f"{summary['avg_carry_distance_threshold']:.2f}"},
     ]
     for team, count in sorted(summary["team_counts"].items()):
         rows.append({"section": "teams", "metric": team, "value": count})
@@ -339,9 +375,12 @@ def _write_summary(summary: dict, csv_path: Path, md_path: Path) -> None:
         "# Carry Summary",
         "",
         f"- Total carries: {summary['total_carries']}",
+        f"- Carry distance multiplier: {summary['carry_distance_multiplier']:.2f}",
         f"- Average carry duration: {summary['avg_duration_seconds']:.3f} s",
         f"- Average carry ball distance: {summary['avg_ball_distance_px']:.2f} px",
         f"- Max carry ball distance: {summary['max_ball_distance_px']:.2f} px",
+        f"- Average player box height: {summary['avg_mean_player_box_height']:.2f} px",
+        f"- Average carry distance threshold: {summary['avg_carry_distance_threshold']:.2f} px",
         "",
         "## Carries by Team",
         "",
@@ -404,7 +443,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-ball-distance-px", type=float, default=20.0)
     parser.add_argument("--min-player-distance-px", type=float, default=10.0)
     parser.add_argument("--max-frame-gap", type=int, default=1)
-    parser.add_argument("--max-mean-distance-to-ball", type=float, default=80.0)
+    parser.add_argument("--carry-distance-multiplier", type=float, default=0.8)
     parser.add_argument("--max-interpolated-share", type=float, default=0.5)
     return parser.parse_args()
 
@@ -423,7 +462,7 @@ def main() -> int:
         min_ball_distance_px=args.min_ball_distance_px,
         min_player_distance_px=args.min_player_distance_px,
         max_frame_gap=args.max_frame_gap,
-        max_mean_distance_to_ball=args.max_mean_distance_to_ball,
+        carry_distance_multiplier=args.carry_distance_multiplier,
         max_interpolated_share=args.max_interpolated_share,
     )
     return 0
