@@ -30,3 +30,8 @@ savenv
 *venv*
 *.csv
 *.json
+
+
+# Data from cvat
+
+temporal_module/data/gold_event_project/cvat_uploads/*
