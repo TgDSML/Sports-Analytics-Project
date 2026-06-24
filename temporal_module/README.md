@@ -28,6 +28,121 @@ python temporal_module\scripts\build_all_temporal_frames.py ^
 
 The batch builder writes only under `temporal_module\data\derived` and never modifies `outputs/`.
 
+## SoccerNet download planning
+
+Inspect a local SoccerNet folder and create candidate inventory files:
+
+```cmd
+python temporal_module\scripts\inspect_soccernet_dataset.py ^
+--soccernet-root "REAL_PATH_TO_SOCCERNET_FOLDER"
+```
+
+Build the local existing-clip manifest before adding more SoccerNet clips:
+
+```cmd
+python temporal_module\scripts\build_soccernet_download_plan.py ^
+--outputs-root outputs ^
+--derived-root temporal_module\data\derived ^
+--target-new-clips 25
+```
+
+After a SoccerNet inventory exists, build a duplicate-aware new-clip plan:
+
+```cmd
+python temporal_module\scripts\build_soccernet_download_plan.py ^
+--outputs-root outputs ^
+--derived-root temporal_module\data\derived ^
+--soccernet-inventory temporal_module\data\soccernet_inventory\soccernet_pilot_candidates.csv ^
+--target-new-clips 25
+```
+
+This planning tool does not download anything and does not modify existing clips. Existing local clips are retained, exact local duplicates are excluded using conservative normalized path/name matches only, and only rows selected in the reviewed plan should be downloaded later.
+
+Install the official SoccerNet package before downloading reviewed selections:
+
+```cmd
+python -m pip install SoccerNet
+```
+
+Dry-run selected tracking downloads from the reviewed plan:
+
+```cmd
+python temporal_module\scripts\download_soccernet_selected_clips.py ^
+--selection-manifest temporal_module\data\soccernet_inventory\soccernet_new_clip_download_plan.csv ^
+--soccernet-root "C:\Users\nikoma\Desktop\SoccerNet" ^
+--dataset-mode tracking ^
+--dry-run ^
+--max-downloads 25
+```
+
+`--dry-run` validates selected manifest rows and intended paths without requiring the SoccerNet video password. Broadcast downloads require setting the password outside the repository only when downloading for real:
+
+```cmd
+set SOCCERNET_VIDEO_PASSWORD=YOUR_PASSWORD
+```
+
+The downloader reads only reviewed `candidate_for_new_download` rows, never downloads the full SoccerNet dataset by default, and writes logs only under `temporal_module\data\soccernet_inventory`.
+
+Build a reproducible Premier League new-clip selection manifest without downloading videos:
+
+```cmd
+python src\data_tools\download_soccernet_epl.py ^
+  --sample-size 25 ^
+  --seed 42 ^
+  --exclude-manifest "PATH_TO_OLD_MANIFEST.csv" ^
+  --outputs-root outputs ^
+  --derived-root temporal_module\data\derived ^
+  --soccernet-dir "C:\Users\nikoma\Desktop\SoccerNet" ^
+  --manifest "temporal_module\data\soccernet_inventory\epl_new_25_selection.csv" ^
+  --dry-run
+```
+
+Review `epl_new_25_selection.csv`, `epl_new_25_selection_audit.csv`, and `epl_new_25_selection_summary.json`.
+
+Then dry-run the existing selected-clip downloader:
+
+```cmd
+python temporal_module\scripts\download_soccernet_selected_clips.py ^
+  --selection-manifest "temporal_module\data\soccernet_inventory\epl_new_25_selection.csv" ^
+  --soccernet-root "C:\Users\nikoma\Desktop\SoccerNet" ^
+  --dataset-mode broadcast_720p ^
+  --dry-run ^
+  --max-downloads 25
+```
+
+Only after reviewing the dry-run output should the selected-clip downloader be run again without `--dry-run`. Do not store SoccerNet passwords in source code, manifests, logs, config files, or README documentation.
+
+## Normal event-candidate sweep
+
+Run the full per-clip temporal analytics sweep:
+
+```cmd
+python temporal_module\scripts\run_event_candidate_sweep.py ^
+  --outputs-root outputs ^
+  --derived-root temporal_module\data\derived ^
+  --k-nearest 4 ^
+  --defender-radius-px 100 ^
+  --max-merged-pass-span-frames 24 ^
+  --interception-duplicate-frame-tolerance 2
+```
+
+The normal sweep runs temporal frames, weak pass exports, carry labels, pass candidates, turnover candidates, shot candidates, refinement, unified event candidates, and then pass scoring as the final downstream stage. The pass scorer is invoked only after `pass_candidates_refined.csv` and `event_candidates_unified.csv` exist for every derived clip, and it uses the standard recovery/post-turnover context arguments documented below. The combined per-clip status is written to `temporal_module\data\derived\event_candidate_sweep_summary.csv`; a pass-scoring failure marks the clip's final sweep status as `failed`.
+
+Run the same sweep for exactly one derived clip directory by passing its exact folder name:
+
+```cmd
+python temporal_module\scripts\run_event_candidate_sweep.py ^
+--outputs-root outputs ^
+--derived-root temporal_module\data\derived ^
+--clip-id england_epl__2014_2015__2015_04_11___19_30_Burnley_0___1_Arsenal__h1_720p ^
+--k-nearest 4 ^
+--defender-radius-px 100 ^
+--max-merged-pass-span-frames 24 ^
+--interception-duplicate-frame-tolerance 2
+```
+
+When `--clip-id` is supplied, the ID must exactly match a directory under `--derived-root`; substring matching is not used. The combined summary still writes to `event_candidate_sweep_summary.csv`, but contains only the selected clip and populates `selected_clip_id`.
+
 ## Derived Feature Definitions
 
 - `ball_vx`, `ball_vy`: ball pixel velocity from frame-to-frame position delta divided by timestamp delta.
