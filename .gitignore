@@ -31,7 +31,17 @@ savenv
 *.csv
 *.json
 
-
 # Data from cvat
-
 temporal_module/data/gold_event_project/cvat_uploads/*
+
+# Generated deep-learning tensors and downloaded bundles
+*.npz
+temporal_module/data_gold/*.zip
+temporal_module/data_gold/frame_windows_benchmark*/
+temporal_module/runs_gold/event_cnn_lstm_benchmark/
+
+# Keep tiny evaluation fixtures versioned despite broad CSV/JSON ignores.
+!tests/
+!tests/fixtures/
+!tests/fixtures/evaluation/
+!tests/fixtures/evaluation/*.csv

@@ -60,6 +60,50 @@ def task_name_from_root(root: ET.Element) -> str:
     return (name_node.text or "").strip() if name_node is not None else ""
 
 
+def task_size_from_root(root: ET.Element) -> int:
+    size_node = root.find("./meta/task/size")
+    try:
+        return int(size_node.text or 0) if size_node is not None else 0
+    except ValueError:
+        return 0
+
+
+def resolve_fps(root: ET.Element, manifest_row: dict[str, str], warnings: list[str]) -> float:
+    try:
+        fps = float(manifest_row.get("fps") or 0.0)
+    except ValueError:
+        fps = 0.0
+    if fps > 0:
+        return fps
+
+    try:
+        duration = float(manifest_row.get("duration_seconds") or 0.0)
+    except ValueError:
+        duration = 0.0
+    task_size = task_size_from_root(root)
+    if duration > 0 and task_size > 0:
+        derived_fps = task_size / duration
+        warnings.append(f"manifest fps missing; derived fps={derived_fps:.6f} from CVAT task size {task_size} and duration {duration:.3f}s")
+        return derived_fps
+
+    warnings.append("manifest fps missing; using fallback fps=25.0")
+    return 25.0
+
+
+def task_name_is_compatible(task_name: str, expected_task: str, clip_id: str) -> bool:
+    if not task_name or not expected_task:
+        return True
+    if task_name == expected_task:
+        return True
+    if task_name == "gold_v1__{{file_name}}":
+        return True
+    if task_name == f"{clip_id}.mp4":
+        return True
+    if task_name == f"gold_v1__{clip_id}.mp4":
+        return True
+    return False
+
+
 def active_intervals(track: ET.Element) -> list[tuple[int, int]]:
     frames: list[int] = []
     for box in track.findall("box"):
@@ -85,16 +129,15 @@ def active_intervals(track: ET.Element) -> list[tuple[int, int]]:
     return intervals
 
 
-def convert_export(zip_path: Path, clip_id: str, manifest_row: dict[str, str]) -> tuple[list[dict[str, Any]], list[str]]:
+def convert_export(zip_path: Path, clip_id: str, manifest_row: dict[str, str]) -> tuple[list[dict[str, Any]], list[str], list[str]]:
     root = ET.fromstring(find_annotation_xml(zip_path))
     task_name = task_name_from_root(root)
     expected_task = manifest_row.get("cvat_task_name", "")
-    fps = float(manifest_row.get("fps") or 0.0)
     errors: list[str] = []
-    if task_name and expected_task and task_name != expected_task:
-        errors.append(f"task name mismatch: export={task_name}, manifest={expected_task}")
-    if fps <= 0:
-        errors.append("manifest fps is missing")
+    warnings: list[str] = []
+    if not task_name_is_compatible(task_name, expected_task, clip_id):
+        warnings.append(f"task name mismatch: export={task_name}, manifest={expected_task}")
+    fps = resolve_fps(root, manifest_row, warnings)
 
     rows: list[dict[str, Any]] = []
     seen = set()
@@ -115,7 +158,7 @@ def convert_export(zip_path: Path, clip_id: str, manifest_row: dict[str, str]) -
             seen.add(duplicate_key)
             for prev_start, prev_end, prev_label in interval_by_clip:
                 if not (end_frame < prev_start or start_frame > prev_end):
-                    errors.append(f"overlap: {label} {start_frame}-{end_frame} with {prev_label} {prev_start}-{prev_end}")
+                    warnings.append(f"overlap: {label} {start_frame}-{end_frame} with {prev_label} {prev_start}-{prev_end}")
             interval_by_clip.append((start_frame, end_frame, label))
             uncertain = label == "uncertain"
             rows.append(
@@ -135,7 +178,7 @@ def convert_export(zip_path: Path, clip_id: str, manifest_row: dict[str, str]) -
                 }
             )
             event_counter += 1
-    return rows, errors
+    return rows, warnings, errors
 
 
 def write_output(path: Path, rows: list[dict[str, Any]]) -> None:
@@ -157,18 +200,24 @@ def main() -> int:
         return 0
 
     all_rows: list[dict[str, Any]] = []
+    all_warnings: list[str] = []
     all_errors: list[str] = []
     for export in exports:
         clip_id = export.stem.removeprefix("cvat_export__")
         if clip_id not in manifest:
             all_errors.append(f"unknown clip export: {export.name}")
             continue
-        rows, errors = convert_export(export, clip_id, manifest[clip_id])
+        rows, warnings, errors = convert_export(export, clip_id, manifest[clip_id])
         all_rows.extend(rows)
+        all_warnings.extend(f"{clip_id}: {warning}" for warning in warnings)
         all_errors.extend(f"{clip_id}: {error}" for error in errors)
 
     print(f"exports found: {len(exports)}")
     print(f"intervals parsed: {len(all_rows)}")
+    if all_warnings:
+        print("validation warnings:")
+        for warning in all_warnings:
+            print("- " + warning)
     if all_errors:
         print("validation errors:")
         for error in all_errors:
