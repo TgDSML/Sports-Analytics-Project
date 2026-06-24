@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import getpass
 import json
 import os
 import sys
@@ -141,7 +142,9 @@ def game_id_from_relative_path(relative_path: Path) -> str:
 def require_video_password(env_name: str) -> str:
     password = os.getenv(env_name)
     if not password:
-        raise RuntimeError(f"Missing required SoccerNet video password environment variable: {env_name}")
+        password = getpass.getpass("Enter SoccerNet video password: ")
+    if not password or not password.strip():
+        raise RuntimeError("A SoccerNet video password is required for real broadcast downloads.")
     PASSWORD_VALUES.add(password)
     return password
 
@@ -350,9 +353,6 @@ def sanitize(message: str) -> str:
     for value in PASSWORD_VALUES:
         if value:
             text = text.replace(value, "[redacted]")
-    default_password = os.getenv("SOCCERNET_VIDEO_PASSWORD", "")
-    if default_password:
-        text = text.replace(default_password, "[redacted]")
     return text
 
 
