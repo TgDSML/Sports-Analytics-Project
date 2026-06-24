@@ -27,4 +27,6 @@ Thumbs.db
 
 openh264-1.8.0-win64.dll
 savenv
-
+*venv*
+*.csv
+*.json
