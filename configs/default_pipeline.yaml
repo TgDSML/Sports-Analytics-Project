@@ -4,7 +4,7 @@ data:
   splits:
     - valid
   competition_prefix: england_epl/
-  sample_size: 10
+  sample_size: 25
   random_seed: 42
 
 video:
