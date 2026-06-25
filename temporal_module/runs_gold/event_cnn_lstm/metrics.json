@@ -1,36 +1,109 @@
 {
-  "final": {
-    "epoch": 20,
-    "train_loss": 1.1291897062645402,
-    "val_loss": 1.2612338132636491,
-    "val_accuracy": 0.6,
-    "macro_f1": 0.3075644129182383
+  "validation": {
+    "accuracy": 0.49767441860465117,
+    "macro_f1": 0.2185104529616725,
+    "loss": 1.2553246237510858
   },
-  "per_class": {
+  "test": {
+    "accuracy": 0.5813953488372093,
+    "macro_f1": 0.24235612806547363,
+    "loss": 1.1119528842526814
+  },
+  "last_epoch": {
+    "epoch": 20,
+    "train_loss": 1.1220086254814798,
+    "val_loss": 1.3939888086429861,
+    "val_accuracy": 0.386046511627907,
+    "macro_f1": 0.190364387174529
+  },
+  "test_per_class": {
     "background": {
-      "precision": 0.7789473684210526,
-      "recall": 0.6548672566371682,
-      "f1": 0.7115384615384616
+      "precision": 0.9722222222222222,
+      "recall": 0.3763440860215054,
+      "f1": 0.5426356589147288,
+      "support": 93
     },
     "carry": {
-      "precision": 0.3333333333333333,
-      "recall": 0.23529411764705882,
-      "f1": 0.27586206896551724
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "support": 25
     },
     "pass": {
-      "precision": 0.5462962962962963,
-      "recall": 0.7662337662337663,
-      "f1": 0.6378378378378378
+      "precision": 0.5027932960893855,
+      "recall": 1.0,
+      "f1": 0.6691449814126395,
+      "support": 90
     },
     "turnover": {
       "precision": 0.0,
       "recall": 0.0,
-      "f1": 0.0
+      "f1": 0.0,
+      "support": 4
     },
     "shot": {
       "precision": 0.0,
       "recall": 0.0,
-      "f1": 0.0
+      "f1": 0.0,
+      "support": 3
     }
-  }
+  },
+  "validation_per_class": {
+    "background": {
+      "precision": 0.5118110236220472,
+      "recall": 0.6701030927835051,
+      "f1": 0.5803571428571429,
+      "support": 97
+    },
+    "carry": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "support": 34
+    },
+    "pass": {
+      "precision": 0.4772727272727273,
+      "recall": 0.5526315789473685,
+      "f1": 0.5121951219512196,
+      "support": 76
+    },
+    "turnover": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "support": 8
+    },
+    "shot": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "support": 0
+    }
+  },
+  "split_counts": {
+    "train": {
+      "background": 362,
+      "carry": 65,
+      "pass": 200,
+      "turnover": 16,
+      "shot": 2
+    },
+    "val": {
+      "background": 97,
+      "carry": 34,
+      "pass": 76,
+      "turnover": 8,
+      "shot": 0
+    },
+    "test": {
+      "background": 93,
+      "carry": 25,
+      "pass": 90,
+      "turnover": 4,
+      "shot": 3
+    }
+  },
+  "split_warnings": [
+    "val split has no windows for: shot"
+  ]
 }
