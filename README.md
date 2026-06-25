@@ -1,29 +1,102 @@
-# sports-analytics-project
+# Sports Analytics Project
 
-## Project Description
+## Overview
 
-This project is a simple computer vision baseline for sports analytics. It runs a pretrained Ultralytics YOLO model on local sports video, keeps player detections, and writes an annotated output video with resolution-aware bounding boxes and labels.
+Sports Analytics Project is an end-to-end football video analytics pipeline for broadcast-style match clips. It combines computer vision, tracking, tactical analytics, temporal feature engineering, weak-label event learning, and a CVAT-based gold-label workflow.
 
-The current implementation is intentionally small and reproducible:
+The project currently supports:
 
-- YOLO player detection
-- Optional random video selection from a local SoccerNet sample
-- Annotated MP4 output
-- ByteTrack tracking by default, with centroid tracking available as a fallback
-- Tracks CSV export
-- Player movement heatmap generation
-- Player trajectory visualization and movement statistics
-- Improved jersey-color team classification
-- Role-aware goalkeeper/referee heuristics
-- Optional ball detection baseline with separate CSV and annotated video outputs
-- Ball tracking from filtered ball detections
-- Baseline possession estimation from nearest player-to-ball distance
+- player detection
+- player tracking
+- team classification
+- ball detection and filtering
+- ball tracking
+- possession estimation
+- carry, pass, turnover, interception, and shot candidate generation
+- temporal feature extraction
+- weak-label event dataset construction
+- CVAT gold-label import
+- BiGRU and CNN-LSTM event classification experiments
 
-## Setup Instructions
+Large videos, model checkpoints, generated outputs, and private annotation exports are intentionally kept out of Git. A fresh clone contains the source code, configs, manifests, lightweight summaries, and reproducibility/report artifacts that are small enough to version.
 
-Create and activate a virtual environment:
+## Key Features
+
+- YOLO/Ultralytics player detection with ByteTrack tracking.
+- Explainable jersey-color team classification and role heuristics.
+- Optional football detection, filtering, tracking, and possession estimation.
+- Per-clip output folders with detections, tracks, teams, possession, tactical maps, logs, and QA summaries.
+- Temporal module for engineered per-frame features and event candidate catalogs.
+- Weak-label learning from heuristic event candidates without CVAT or gold labels.
+- CVAT workflow for manually annotated temporal event intervals.
+- Gold supervised BiGRU and CNN-LSTM event classification prototypes.
+- Manifest-based batch processing for reproducible clip selection.
+
+## System Architecture
+
+```text
+Raw video
+   |
+   v
+YOLO player detection
+   |
+   v
+ByteTrack tracking
+   |
+   v
+Team classification
+   |
+   v
+Ball detection/filtering
+   |
+   v
+Possession estimation
+   |
+   v
+Event candidates
+   |
+   v
+Temporal features
+   |
+   v
+Weak labels / CVAT gold labels
+   |
+   v
+BiGRU / CNN-LSTM
+```
+
+## Repository Structure
+
+```text
+Sports-Analytics-Project/
+|-- configs/              # Pipeline configuration files
+|-- data/                 # Local input data; large files are ignored
+|   `-- manifests/        # Versioned clip manifests
+|-- outputs/              # Generated per-clip analytics outputs
+|-- src/                  # Main detection, tracking, analytics, and pipeline code
+|-- temporal_module/      # Temporal features, event candidates, weak/gold learning
+|   |-- data/             # Local/generated temporal data
+|   |-- docs/             # Temporal-module notes
+|   |-- reproducibility/  # Lightweight reproducibility artifacts
+|   |-- runs_gold/        # Gold supervised model summaries and metrics
+|   |-- scripts/          # Temporal workflow scripts
+|   `-- src/              # Shared temporal feature/model helpers
+|-- main.py               # Standalone YOLO video baseline
+|-- requirements.txt      # Runtime Python dependencies
+|-- setup.bat             # Windows setup helper
+|-- setup.sh              # Linux/macOS setup helper
+`-- README.md
+```
+
+`PROJECT_SUMMARY.md` is not present on the current `main` branch. Use this README and the summaries under `temporal_module/` as the primary documentation.
+
+## Installation
+
+Clone the repository and create a virtual environment.
 
 ```bash
+git clone <repo-url>
+cd Sports-Analytics-Project
 python -m venv .venv
 ```
 
@@ -39,471 +112,359 @@ Linux/macOS:
 source .venv/bin/activate
 ```
 
-Install dependencies:
+Install runtime dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Optional development checks use `pytest`. `PyYAML` can also be installed for full YAML parsing, although the pipeline includes a small fallback parser for the default config:
+Optional development dependencies:
 
 ```bash
 pip install pytest PyYAML
 ```
 
-You can also run the setup script for your platform:
+Notes:
 
-Windows:
+- `ffmpeg` is required for clip preprocessing. Put it on `PATH` or under `tools/ffmpeg/`.
+- Ultralytics may download YOLO weights on first use if the requested model is not already local.
+- The `SoccerNet` package is listed in `requirements.txt`, but SoccerNet videos and credentials are not stored in this repository.
 
-```bat
-setup.bat
-```
+## Data Setup
 
-Linux/macOS:
+Large SoccerNet videos are not stored in Git. Put local videos under `data/SoccerNet/` or pass an explicit video path to the single-clip runner.
 
-```bash
-chmod +x setup.sh
-./setup.sh
-```
-
-## Local SoccerNet Data
-
-Place local SoccerNet videos under `data/SoccerNet/`. The orchestrated pipeline expects a real video path via `--video` and writes all generated artifacts under a per-clip folder in `outputs/`.
-
-Example source path:
+Expected local layout:
 
 ```text
-data/SoccerNet/england_epl/2015-2016/2015-09-26 - 17-00 Manchester United 3 - 0 Sunderland/1_720p.mkv
+data/
+|-- SoccerNet/
+|   `-- england_epl/
+|       `-- <season>/
+|           `-- <match>/
+|               |-- 1_720p.mkv
+|               `-- 2_720p.mkv
+`-- manifests/
+    `-- dataset_manifest.csv
 ```
 
-## Run YOLO Baseline
+The default manifest is:
 
-Run YOLO on a sample video:
+```text
+data/manifests/dataset_manifest.csv
+```
+
+Manifest columns:
+
+```text
+clip_id,split,competition,source,game_id,half,video_path,enabled,notes
+```
+
+Example row:
+
+```csv
+england_epl__2014_2015__2015_04_11___19_30_Burnley_0___1_Arsenal__h1_720p,valid,england_epl,SoccerNet,england_epl/2014-2015/2015-04-11 - 19-30 Burnley 0 - 1 Arsenal,1,data/SoccerNet/england_epl/2014-2015/2015-04-11 - 19-30 Burnley 0 - 1 Arsenal/1_720p.mkv,true,pilot_random_sample
+```
+
+Only enabled manifest rows are processed by the batch runner.
+
+## Quick Start: Run One Clip
+
+Requires a local video file.
 
 ```bash
-python main.py --video data/sample_30s.mp4 --output outputs/yolov8_baseline.mp4 --model yolov8n.pt
+python -m src.pipeline.run_clip --config configs/default_pipeline.yaml --video data/sample_30s_720p.mp4 --clip-id sample_30s
 ```
 
-Run YOLO and export detections to CSV:
+For a SoccerNet manifest clip, either pass `--video` directly or use a manifest `clip_id`:
 
 ```bash
-python main.py --video data/sample_30s.mp4 --output outputs/yolo_30s_baseline.mp4 --model yolov8n.pt --conf 0.15 --imgsz 640 --csv-output outputs/detections_30s.csv
+python -m src.pipeline.run_clip --config configs/default_pipeline.yaml --manifest data/manifests/dataset_manifest.csv --clip-id england_epl__2014_2015__2015_04_11___19_30_Burnley_0___1_Arsenal__h1_720p
 ```
 
-Run YOLO with centroid tracking and export detections plus tracks:
+If the video path in the manifest is not available locally, the command will fail at the input stage. This is expected for a fresh clone without SoccerNet data.
+
+## Batch Processing with Manifest
+
+Requires local videos matching the manifest paths.
 
 ```bash
-python main.py --video data/sample_30s.mp4 --output outputs/tracked_30s.mp4 --model yolov8n.pt --conf 0.15 --imgsz 640 --csv-output outputs/detections_30s.csv --enable-tracking --tracker-type centroid --tracks-csv outputs/tracks_30s.csv
+python -m src.pipeline.run_dataset --config configs/default_pipeline.yaml --manifest data/manifests/dataset_manifest.csv
 ```
 
-Run YOLO with the improved centroid tracker:
+Process selected clips only:
 
 ```bash
-python main.py --video data/sample_30s.mp4 --output outputs/tracked_30s_improved.mp4 --model yolov8n.pt --conf 0.2 --imgsz 640 --enable-tracking --tracker-type centroid --tracks-csv outputs/tracks_30s_improved.csv --max-distance 120 --max-missing 30 --smoothing 0.7 --min-box-area 100
+python -m src.pipeline.run_dataset --config configs/default_pipeline.yaml --manifest data/manifests/dataset_manifest.csv --clip-id england_epl__2014_2015__2015_04_11___19_30_Burnley_0___1_Arsenal__h1_720p
 ```
 
-## Tracking Backends
+`run_dataset` does not currently expose a dry-run flag. Use manifest inspection and single-clip runs before launching a full batch.
 
-Tracking is enabled with `--enable-tracking`. The default backend is `bytetrack`.
+## Main Outputs
 
-- `bytetrack`: preferred backend using Ultralytics ByteTrack for more stable player IDs.
-- `centroid`: simple baseline tracker kept as a fallback and for comparison.
+Each clip is written under:
 
-Example ByteTrack run:
+```text
+outputs/<clip_id>/
+|-- preprocessed/
+|   `-- clip.mp4
+|-- detections/
+|   |-- detections.csv
+|   |-- ball_detections_raw.csv
+|   |-- ball_detections_filtered.csv
+|   `-- ball_detection_summary.md
+|-- tracks/
+|   |-- tracks.csv
+|   |-- tracks_top5.csv
+|   |-- ball_tracks.csv
+|   `-- ball_tracking_summary.md
+|-- teams/
+|   |-- player_teams.csv
+|   |-- heatmap_team_a.png
+|   |-- heatmap_team_b.png
+|   `-- debug/
+|-- possession/
+|   |-- possession.csv
+|   |-- possession_debug.csv
+|   |-- possession_summary.csv
+|   |-- possession_summary.md
+|   `-- possession_qa_summary.md
+|-- carries/
+|-- interceptions/
+|-- tactical/
+|   |-- player_stats.csv
+|   |-- player_stats.xlsx
+|   |-- passing_summary.csv
+|   |-- passing_summary.md
+|   `-- passing_maps/
+|-- visualizations/
+|   |-- tracked.mp4
+|   |-- team_tracked.mp4
+|   |-- ball_tracked.mp4
+|   |-- possession.mp4
+|   |-- heatmap_all.png
+|   `-- trajectories_all.png
+`-- logs/
+```
+
+Temporal outputs are written under:
+
+```text
+temporal_module/data/derived/<clip_id>/
+|-- temporal_frames.csv
+|-- passes_weak.csv
+`-- events/
+    |-- pass_candidates.csv
+    |-- turnover_candidates.csv
+    |-- shot_candidates.csv
+    |-- pass_candidates_refined.csv
+    |-- turnover_candidates_refined.csv
+    |-- shot_candidates_refined.csv
+    `-- event_candidates_unified.csv
+```
+
+## Temporal Module
+
+The temporal module converts per-frame pipeline outputs into model-ready event data.
+
+- `temporal_frames.csv`: one row per frame with engineered image-space features.
+- 64-frame windows: default sequence length for BiGRU experiments.
+- 68 engineered features: current gold temporal feature count in committed gold summaries.
+- Weak labels: derived from heuristic event candidates only.
+- Gold labels: imported from CVAT temporal event intervals.
+- BiGRU: sequence model over engineered temporal features.
+- CNN-LSTM: visual frame-window prototype over sampled RGB frames.
+
+Build temporal frames and event candidates after the clip pipeline has produced `outputs/<clip_id>/`:
 
 ```bash
-python main.py --video data/sample_30s.mp4 --output outputs/tracked_30s.mp4 --model yolov8n.pt --conf 0.2 --imgsz 640 --enable-tracking --tracker-type bytetrack --tracks-csv outputs/tracks_30s.csv
-```
-
-Run YOLO with tracking and generate a single-player heatmap:
-
-```bash
-python main.py --video data/sample_30s.mp4 --output outputs/tracked_30s.mp4 --model yolov8n.pt --enable-tracking --tracks-csv outputs/tracks_30s.csv --generate-heatmap --heatmap-track-id 3 --heatmap-output outputs/heatmap_player3.png
-```
-
-Run YOLO on one random local SoccerNet video:
-
-```bash
-python main.py --random-soccernet --soccernet-dir data/SoccerNet --output outputs/yolo_random_soccernet_baseline.mp4 --model yolov8n.pt
-```
-
-Optionally display annotated frames while processing:
-
-```bash
-python main.py --random-soccernet --soccernet-dir data/SoccerNet --output outputs/yolo_random_soccernet_baseline.mp4 --model yolov8n.pt --show
-```
-
-## Example Commands
-
-Compile-check the project:
-
-```bash
-python -m compileall main.py src
-```
-
-Run with a higher confidence threshold:
-
-```bash
-python main.py --video data/sample_30s.mp4 --output outputs/yolov8_conf_025.mp4 --model yolov8n.pt --conf 0.25
-```
-
-Run with a smaller inference size for faster CPU processing:
-
-```bash
-python main.py --video data/sample_30s.mp4 --output outputs/yolov8_fast.mp4 --model yolov8n.pt --imgsz 416
-```
-
-## Analytics Outputs
-
-Run YOLO baseline and export detections to CSV:
-
-```bash
-python main.py --video data/sample_30s.mp4 --output outputs/yolo_30s_baseline.mp4 --model yolov8n.pt --conf 0.15 --imgsz 640 --csv-output outputs/detections_30s.csv
-```
-
-Run tracking and export tracks to CSV:
-
-```bash
-python main.py --video data/sample_30s.mp4 --output outputs/tracked_30s.mp4 --model yolov8n.pt --enable-tracking --tracks-csv outputs/tracks_30s.csv
-```
-
-Generate a heatmap during the tracking pipeline:
-
-```bash
-python main.py --video data/sample_30s.mp4 --output outputs/tracked_30s.mp4 --model yolov8n.pt --enable-tracking --tracks-csv outputs/tracks_30s.csv --generate-heatmap --heatmap-output outputs/heatmap_all.png
-```
-
-Generate an all-player heatmap from an existing tracks CSV without rerunning YOLO:
-
-```bash
-python -m src.analytics.heatmap --tracks-csv outputs/tracks_30s.csv --output outputs/heatmap_all_from_csv.png
-```
-
-Generate a single-player heatmap from an existing tracks CSV:
-
-```bash
-python -m src.analytics.heatmap --tracks-csv outputs/tracks_30s.csv --track-id 3 --output outputs/heatmap_player3_from_csv.png
-```
-
-Generate all-player trajectories from an existing tracks CSV:
-
-```bash
-python -m src.analytics.trajectories --tracks-csv outputs/tracks_30s.csv --output outputs/trajectories_all.png
-```
-
-Generate a single-player trajectory from an existing tracks CSV:
-
-```bash
-python -m src.analytics.trajectories --tracks-csv outputs/tracks_30s.csv --track-id 3 --output outputs/trajectory_player3.png
-```
-
-Generate player movement statistics from an existing tracks CSV:
-
-```bash
-python -m src.analytics.player_stats --tracks-csv outputs/tracks_30s.csv --output outputs/player_stats_30s.csv
-```
-
-Generate raw, readable, Markdown, and Excel player statistics:
-
-```bash
-python -m src.analytics.player_stats --tracks-csv outputs/tracks_30s.csv --output outputs/player_stats_30s.csv --readable-output outputs/player_stats_30s_readable.csv --markdown-output outputs/player_stats_30s.md --excel-output outputs/player_stats_30s.xlsx
-```
-
-Generate trajectories and player statistics during the tracking pipeline:
-
-```bash
-python main.py --video data/sample_30s.mp4 --output outputs/tracked_30s.mp4 --enable-tracking --tracks-csv outputs/tracks_30s.csv --generate-trajectories --trajectory-output outputs/trajectories_all.png --generate-player-stats --player-stats-output outputs/player_stats_30s.csv
-```
-
-## Ball Detection Baseline
-
-Ball detection is implemented as a separate opt-in baseline so player detection, player tracking, and team overlays stay unchanged. It runs YOLO on the input video, keeps model classes named `ball`, `football`, `soccer ball`, or `sports ball`, exports raw and filtered CSVs, and writes a separate filtered annotated video with compact `ball 0.72` labels.
-
-Run ball detection with the default generic YOLO model:
-
-```bash
-python main.py --video data/sample_30s.mp4 --output outputs/tracked_30s.mp4 --detect-ball --ball-raw-output-csv outputs/ball_detections_raw.csv --ball-output-csv outputs/ball_detections_filtered.csv --ball-video-output outputs/ball_detected_filtered.mp4
-```
-
-Run ball detection with a soccer-specific or fine-tuned model:
-
-```bash
-python main.py --video data/sample_30s.mp4 --output outputs/tracked_30s.mp4 --detect-ball --ball-model path/to/ball_model.pt --ball-conf 0.10 --ball-imgsz 1280 --ball-raw-output-csv outputs/ball_detections_raw.csv --ball-output-csv outputs/ball_detections_filtered.csv --ball-video-output outputs/ball_detected_filtered.mp4
-```
-
-Practical 720p filters are enabled by default:
-
-- top-frame exclusion for scoreboard/broadcast graphics: `--ball-exclude-top-ratio 0.08`
-- compact candidate size bounds: `--ball-min-area 20`, `--ball-max-area 500`, `--ball-min-width 4`, `--ball-max-width 30`, `--ball-min-height 4`, `--ball-max-height 30`
-- one retained candidate per frame: `--ball-max-detections-per-frame 1`
-
-Optional debug frames can be exported by setting `--ball-debug-frame-stride`, for example:
-
-```bash
-python main.py --video data/sample_30s.mp4 --output outputs/tracked_30s.mp4 --detect-ball --ball-debug-frame-stride 25
-```
-
-Ball detection CSV columns:
-
-- `frame`
-- `timestamp`
-- `x1`
-- `y1`
-- `x2`
-- `y2`
-- `center_x`
-- `center_y`
-- `confidence`
-- `class_id`
-- `class_name`
-
-Current limitation: a generic COCO YOLO model may not reliably detect the football in broadcast video. The ball is small, fast, blurry, and often occluded, so zero detections or false positives are expected on some clips. The next step is to use a soccer-specific ball detector or a YOLO model fine-tuned on football ball annotations.
-
-Ball diagnostics are written to:
-
-- `outputs/ball_debug/ball_detection_summary.csv`
-- `outputs/ball_debug/ball_detection_summary.md`
-
-## Ball Tracking And Possession
-
-Ball tracking links filtered ball detections using nearest-neighbor association, a maximum movement threshold, confidence-aware scoring, short track persistence, and interpolation across short gaps. It is designed as an explainable baseline rather than a learned ball tracker.
-
-Run ball tracking from an existing filtered ball detection CSV:
-
-```bash
-python -m src.tracking.ball_tracker --video data/sample_30s_720p.mp4 --detections-csv outputs/ball_detections_filtered_30s_720p.csv --output-csv outputs/ball_tracks_30s_720p.csv --output-video outputs/ball_tracked_30s_720p.mp4
-```
-
-Possession is an experimental baseline. It is estimated per ball-track frame by finding the nearest eligible tracked player to the ball and mapping that player to the team-classification output. The default QA gates skip interpolated ball points, require minimum ball confidence, exclude unknown/referee/goalkeeper roles, and smooth team switches across consecutive frames. If no eligible player is close enough, the frame is marked as `None`.
-
-Run possession estimation from existing player, team, and ball-track CSVs:
-
-```bash
-python -m src.analytics.possession --video data/sample_30s_720p.mp4 --player-tracks-csv outputs/tracks_30s_720p.csv --teams-csv outputs/player_teams_30s_720p.csv --ball-tracks-csv outputs/ball_tracks_30s_720p.csv --output-csv outputs/possession_30s_720p.csv --debug-csv outputs/possession_debug_30s_720p.csv --summary-csv outputs/possession_summary_30s_720p.csv --summary-md outputs/possession_summary_30s_720p.md --qa-summary-md outputs/possession_qa_summary.md --output-video outputs/possession_30s_720p.mp4 --debug-video outputs/possession_debug_30s_720p.mp4
-```
-
-Generated outputs:
-
-- `outputs/ball_tracks_30s_720p.csv`
-- `outputs/ball_tracked_30s_720p.mp4`
-- `outputs/ball_debug/ball_tracking_summary.csv`
-- `outputs/ball_debug/ball_tracking_summary.md`
-- `outputs/possession_30s_720p.csv`
-- `outputs/possession_summary_30s_720p.csv`
-- `outputs/possession_summary_30s_720p.md`
-- `outputs/possession_30s_720p.mp4`
-- `outputs/possession_debug_30s_720p.csv`
-- `outputs/possession_debug_30s_720p.mp4`
-- `outputs/possession_qa_summary.md`
-
-Current 720p QA summary:
-
-- Ball tracks: 27
-- Longest ball track: 83 points
-- Interpolated ball points: 195
-- Gaps filled: 82
-- Team A possession: 2.63%
-- Team B possession: 6.64%
-- Unknown possession: 0.00%
-- No possession: 90.73%
-- Possession status: experimental baseline, not validated analytics.
-
-## Team Classification
-
-The team classifier assigns tracked players to `Team A`, `Team B`, or `Unknown` using an explainable jersey-color workflow. It samples only the central torso area of each tracked box, rejects grass-heavy or low-quality crops, aggregates valid jersey samples per `track_id`, and clusters robust track-level LAB colors.
-
-Role-aware classification can also separate outfield players, goalkeeper candidates, referee candidates, and unknown tracks. It uses extra color clusters plus track position and movement summaries. By default, team heatmaps include only outfield players so goalkeeper/referee movement does not distort team movement maps.
-
-This is a baseline only. It can be wrong when detections are noisy, players are occluded, lighting changes, kits have similar colors, or tracks are fragmented. Goalkeeper/referee detection is heuristic and deliberately avoids forcing labels when evidence is weak. It does not use homography, event detection, roster identity, or a learned re-identification model.
-
-Run color-based team classification, draw a team-colored tracking video, and generate team heatmaps:
-
-```bash
-python -m src.analytics.team_classifier --video data/sample_30s.mp4 --tracks-csv outputs/tracks_30s.csv --output outputs/player_teams_30s.csv --team-video-output outputs/team_tracked_30s.mp4 --team-a-heatmap outputs/heatmap_team_a.png --team-b-heatmap outputs/heatmap_team_b.png --detect-roles --role-clusters 5
-```
-
-Generated outputs:
-
-- `outputs/player_teams_30s.csv`
-- `outputs/team_tracked_30s.mp4`
-- `outputs/heatmap_team_a.png`
-- `outputs/heatmap_team_b.png`
-- `outputs/team_debug/team_assignments.csv`
-- `outputs/team_debug/role_assignments.csv`
-- `outputs/team_debug/movement_summary.csv`
-- `outputs/team_debug/color_clusters.csv`
-- `outputs/team_debug/color_clusters_palette.png`
-- `outputs/team_debug/role_crops/`
-
-## SoccerNet 720p Clip Pipeline
-
-Use `src.pipeline.run_clip` for the end-to-end 720p workflow. It cuts the clip, runs player and ball detection/tracking, assigns teams, estimates possession, and creates carries, interceptions, passing summaries, passing maps, videos, logs, and QA reports inside one per-match output folder.
-
-Run from the repository root:
-
-```bash
-python -m src.pipeline.run_clip --config configs/default_pipeline.yaml --video "data/SoccerNet/england_epl/2015-2016/2015-09-26 - 17-00 Manchester United 3 - 0 Sunderland/1_720p.mkv" --clip-id england_epl__2015_2016__2015_09_26___17_00_Manchester_United_3___0_Sunderland__h1_720p_golden_test
-```
-
-Expected output layout:
-
-- `outputs/<clip_id>/preprocessed/clip.mp4`
-- `outputs/<clip_id>/detections/`
-- `outputs/<clip_id>/tracks/`
-- `outputs/<clip_id>/teams/`
-- `outputs/<clip_id>/possession/`
-- `outputs/<clip_id>/carries/`
-- `outputs/<clip_id>/interceptions/`
-- `outputs/<clip_id>/tactical/passing_maps/`
-- `outputs/<clip_id>/visualizations/`
-- `outputs/<clip_id>/logs/`
-
-Team classification is a non-training heuristic. It samples only the central
-upper-body region of each tracked box, rejects grass-heavy or low-quality crops,
-aggregates jersey colors per track, then clusters eligible tracks into two team
-colors. Role detection then checks additional color clusters, track position,
-and movement to mark goalkeeper/referee candidates when the evidence is strong
-enough. Tracks without enough clean torso samples are labeled `Unknown`.
-
-## Temporal Event-Candidate Sweep
-
-After clip pipeline outputs exist, run the normal temporal event-candidate sweep from the project root:
-
-```powershell
 python temporal_module/scripts/run_event_candidate_sweep.py --outputs-root outputs --derived-root temporal_module/data/derived --k-nearest 4 --defender-radius-px 100 --max-merged-pass-span-frames 24 --interception-duplicate-frame-tolerance 2
 ```
 
-This sweep builds temporal frames, weak pass exports, carries, pass candidates, turnover/interception candidates, shot candidates, refined candidates, unified event candidates, and then runs pass scoring as the final downstream stage. Pass scoring runs only after each clip has both `pass_candidates_refined.csv` and `event_candidates_unified.csv`; per-clip sweep status is written to `temporal_module\data\derived\event_candidate_sweep_summary.csv`.
+Build a weak-label GRU dataset from non-gold event candidates:
 
-For a one-clip validation run, pass the exact derived clip directory name:
-
-```powershell
-python temporal_module/scripts/run_event_candidate_sweep.py ^
---outputs-root outputs ^
---derived-root temporal_module/data/derived ^
---clip-id england_epl__2014_2015__2015_04_11___19_30_Burnley_0___1_Arsenal__h1_720p ^
---k-nearest 4 ^
---defender-radius-px 100 ^
---max-merged-pass-span-frames 24 ^
---interception-duplicate-frame-tolerance 2
+```bash
+python temporal_module/scripts/build_weak_event_gru_dataset.py --derived-root temporal_module/data/derived --output-dir temporal_module/data/weak_event_gru --window-seconds 8.0 --label-region-seconds 1.0 --stride-seconds 0.5 --seed 42 --train-clips 15 --val-clips 5 --test-clips 5 --balance-strategy none
 ```
 
-With `--clip-id`, the summary CSV contains only that clip and sets `selected_clip_id`; without it, the full sweep behavior is unchanged.
+Train the weak-label BiGRU baseline:
 
-## SoccerNet Download Planning
-
-Inspect a local SoccerNet folder and create candidate inventory files:
-
-```powershell
-python temporal_module/scripts/inspect_soccernet_dataset.py ^
---soccernet-root "<SOCCERNET_ROOT>"
+```bash
+python temporal_module/scripts/train_weak_event_gru.py --dataset-dir temporal_module/data/weak_event_gru --derived-root temporal_module/data/derived --model-dir temporal_module/runs/weak_event_gru/model --report-dir temporal_module/runs/weak_event_gru/report --epochs 40 --batch-size 8 --hidden-size 32 --dropout 0.2 --learning-rate 0.001 --patience 8
 ```
 
-Build the local existing-clip manifest before adding more SoccerNet clips:
+Build gold temporal windows after CVAT import:
 
-```powershell
-python temporal_module/scripts/build_soccernet_download_plan.py ^
---outputs-root outputs ^
---derived-root temporal_module/data/derived ^
---target-new-clips 25
+```bash
+python temporal_module/scripts/build_gold_event_windows.py --gold-events temporal_module/data/gold_event_project/annotations/gold_event_intervals.csv --derived-root temporal_module/data/derived --output-dir temporal_module/data_gold/event_windows
 ```
 
-After a SoccerNet inventory exists, build a duplicate-aware new-clip plan:
+Train the gold BiGRU:
 
-```powershell
-python temporal_module/scripts/build_soccernet_download_plan.py ^
---outputs-root outputs ^
---derived-root temporal_module/data/derived ^
---soccernet-inventory temporal_module/data/soccernet_inventory/soccernet_pilot_candidates.csv ^
---target-new-clips 25
+```bash
+python temporal_module/scripts/train_gold_event_bigru.py --data temporal_module/data_gold/event_windows/gold_event_windows.npz --output-dir temporal_module/runs_gold/event_bigru
 ```
 
-The planner does not download files or overwrite existing clips. It retains local clips, excludes exact duplicates using conservative normalized path/name matches, and expects only reviewed new rows from the plan to be downloaded later.
+Build gold frame windows for the visual prototype:
 
-Install the official SoccerNet package before downloading reviewed selections:
-
-```powershell
-python -m pip install SoccerNet
+```bash
+python temporal_module/scripts/build_gold_frame_windows.py --gold-events temporal_module/data/gold_event_project/annotations/gold_event_intervals.csv --video-root temporal_module/data/gold_event_project/cvat_uploads --output-dir temporal_module/data_gold/frame_windows
 ```
 
-Dry-run selected tracking downloads from the reviewed plan:
+Train the gold CNN-LSTM:
 
-```powershell
-python temporal_module/scripts/download_soccernet_selected_clips.py ^
---selection-manifest temporal_module/data/soccernet_inventory/soccernet_new_clip_download_plan.csv ^
---soccernet-root "<SOCCERNET_ROOT>" ^
---dataset-mode tracking ^
---dry-run ^
---max-downloads 25
+```bash
+python temporal_module/scripts/train_gold_event_cnn_lstm.py --data temporal_module/data_gold/frame_windows/gold_frame_windows.npz --output-dir temporal_module/runs_gold/event_cnn_lstm
 ```
 
-`--dry-run` validates selected manifest rows and intended paths without requiring the SoccerNet video password. Broadcast downloads require setting the password outside the repository only when downloading for real:
+The weak and gold commands require local generated outputs. A fresh clone without videos, derived frames, candidate files, gold intervals, or frame-window tensors will not be able to run these stages immediately.
 
-```powershell
-set SOCCERNET_VIDEO_PASSWORD=YOUR_PASSWORD
-```
+## CVAT Gold Annotation Workflow
 
-The downloader reads only reviewed `candidate_for_new_download` rows, never downloads the full SoccerNet dataset by default, and writes logs only under `temporal_module/data/soccernet_inventory`.
+CVAT is used for temporal event annotation only. It is not used here for player bounding boxes or ball bounding boxes.
 
-Build a reproducible Premier League new-clip selection manifest without downloading videos:
+Gold event labels:
 
-```powershell
-python src/data_tools/download_soccernet_epl.py ^
-  --sample-size 25 ^
-  --seed 42 ^
-  --exclude-manifest "data/manifests/dataset_manifest.csv" ^
-  --outputs-root outputs ^
-  --derived-root temporal_module/data/derived ^
-  --soccernet-dir "<SOCCERNET_ROOT>" ^
-  --manifest "temporal_module/data/soccernet_inventory/epl_new_25_selection.csv" ^
-  --dry-run
-```
+- `carry`
+- `pass`
+- `turnover`
+- `shot`
+- `uncertain`
 
-Review `epl_new_25_selection.csv`, `epl_new_25_selection_audit.csv`, and `epl_new_25_selection_summary.json`.
-
-Then dry-run the existing selected-clip downloader:
-
-```powershell
-python temporal_module/scripts/download_soccernet_selected_clips.py ^
-  --selection-manifest "temporal_module/data/soccernet_inventory/epl_new_25_selection.csv" ^
-  --soccernet-root "<SOCCERNET_ROOT>" ^
-  --dataset-mode broadcast_720p ^
-  --dry-run ^
-  --max-downloads 25
-```
-
-Only after reviewing the dry-run output should the selected-clip downloader be run again without `--dry-run`. Do not store SoccerNet passwords in source code, manifests, logs, config files, or README documentation.
-
-Current 720p validation counts:
-
-- Team assignments: 59 Team A, 89 Team B, 57 Unknown.
-- Role assignments: 59 `team_a_player`, 89 `team_b_player`, 1 `goalkeeper_right`, 56 `unknown`, 0 `referee`.
-- Track 49 is the current `goalkeeper_right` candidate.
-- Team heatmaps are outfield-only by default.
-
-## Project Structure
+Expected CVAT export location:
 
 ```text
-sports-analytics-project/
-|-- data/              # Local input videos and datasets, ignored by Git
-|-- notebooks/         # Experiments and exploratory analysis
-|-- outputs/           # Generated videos and reports, ignored by Git
-|-- src/
-|   |-- analytics/     # Sports metrics and analysis code
-|   |-- detection/     # YOLO detection and visualization code
-|   |-- tracking/      # Centroid tracking code
-|   `-- utils/         # Shared helper functions
-|-- main.py            # YOLO video baseline entry point
-|-- requirements.txt   # Python dependencies
-|-- setup.bat          # Windows setup script
-|-- setup.sh           # Linux/macOS setup script
-`-- README.md
+temporal_module/data/gold_event_project/cvat_exports/
 ```
 
-## Repository Hygiene
+The importer creates:
 
-- `data/` and `outputs/` are ignored except for `.gitkeep` placeholders.
-- `.venv/`, Python caches, generated model weights, and local FFmpeg artifacts are ignored.
-- Keep videos, datasets, generated outputs, and model weights out of Git.
+```text
+temporal_module/data/gold_event_project/annotations/gold_event_intervals.csv
+```
 
-Generated artifacts are intentionally not committed. After cloning or merging, regenerate local outputs with `src.pipeline.run_clip` and a local source video under `data/SoccerNet/`.
+Import command:
+
+```bash
+python temporal_module/scripts/import_cvat_gold_annotations.py --manifest temporal_module/data/gold_event_project/manifests/gold_clip_manifest.csv --export-dir temporal_module/data/gold_event_project/cvat_exports --output temporal_module/data/gold_event_project/annotations/gold_event_intervals.csv
+```
+
+Dry-run import:
+
+```bash
+python temporal_module/scripts/import_cvat_gold_annotations.py --manifest temporal_module/data/gold_event_project/manifests/gold_clip_manifest.csv --export-dir temporal_module/data/gold_event_project/cvat_exports --output temporal_module/data/gold_event_project/annotations/gold_event_intervals.csv --dry-run
+```
+
+CVAT exports and upload videos can be large or private. Keep them out of commits unless the team explicitly decides otherwise.
+
+## Reproducing Report Experiments
+
+Compile check:
+
+```bash
+python -m compileall -q main.py src temporal_module
+```
+
+Single clip pipeline, requires local video:
+
+```bash
+python -m src.pipeline.run_clip --config configs/default_pipeline.yaml --video data/sample_30s_720p.mp4 --clip-id sample_30s
+```
+
+Dataset pipeline, requires local SoccerNet videos:
+
+```bash
+python -m src.pipeline.run_dataset --config configs/default_pipeline.yaml --manifest data/manifests/dataset_manifest.csv
+```
+
+Temporal event-candidate sweep, requires per-clip outputs:
+
+```bash
+python temporal_module/scripts/run_event_candidate_sweep.py --outputs-root outputs --derived-root temporal_module/data/derived --k-nearest 4 --defender-radius-px 100 --max-merged-pass-span-frames 24 --interception-duplicate-frame-tolerance 2
+```
+
+Weak-label reproducibility runner, requires non-gold pipeline outputs and event candidates:
+
+```bash
+python temporal_module/scripts/run_weak_25clip_reproducibility.py --skip-training
+```
+
+Full weak-label reproducibility run, long running:
+
+```bash
+python temporal_module/scripts/run_weak_25clip_reproducibility.py
+```
+
+Gold-label training:
+
+```bash
+python temporal_module/scripts/train_gold_event_bigru.py --data temporal_module/data_gold/event_windows/gold_event_windows.npz --output-dir temporal_module/runs_gold/event_bigru
+python temporal_module/scripts/train_gold_event_cnn_lstm.py --data temporal_module/data_gold/frame_windows/gold_frame_windows.npz --output-dir temporal_module/runs_gold/event_cnn_lstm
+```
+
+Detection metric evaluation, requires YOLO/CVAT-style ground-truth labels and prediction CSVs:
+
+```bash
+python -m src.metrics.evaluate_metrics --ground-truth data/annotations/video_1/obj_train_data --predictions outputs/<clip_id>
+```
+
+## Results Summary
+
+Known committed results should be interpreted carefully. They describe local experiments on limited data, not final production performance.
+
+- Player detection F1: no final player-detection F1 is documented in committed reports.
+- Ball detection F1: no final ball-detection F1 is documented in committed reports.
+- Gold BiGRU, held-out test: accuracy `0.4953`, macro F1 `0.2689`.
+- Gold CNN-LSTM, held-out test: accuracy `0.5814`, macro F1 `0.2424`.
+- The gold summaries warn that rare classes are sparse. For example, the validation split has no `shot` windows.
+- The CNN-LSTM visual prototype currently has higher test accuracy than the gold BiGRU in the committed run, but both macro F1 scores are low because rare event classes remain difficult.
+- Event candidates are experimental heuristic signals, not ground truth.
+
+Result artifacts:
+
+```text
+temporal_module/runs_gold/event_bigru/training_summary.md
+temporal_module/runs_gold/event_bigru/metrics.json
+temporal_module/runs_gold/event_cnn_lstm/training_summary.md
+temporal_module/runs_gold/event_cnn_lstm/metrics.json
+```
+
+## Limitations
+
+- Coordinates are image-space only; there is no pitch calibration or homography.
+- Event candidates are heuristic and can miss or duplicate football events.
+- Possession is estimated from tracked player and ball proximity, not ground truth.
+- Team classification is color-based and can fail with similar kits, occlusions, lighting changes, or fragmented tracks.
+- Ball detection remains fragile because the ball is small, fast, and often occluded.
+- The gold-labelled dataset is limited.
+- Rare classes such as `shot` and `turnover` are highly imbalanced.
+- CNN-LSTM training uses limited visual data and should be treated as a prototype.
+- SoccerNet videos, credentials, private CVAT data, and large generated tensors are not included in Git.
+
+## Future Work
+
+- Pitch calibration and homography for field-relative coordinates.
+- Larger CVAT annotation corpus.
+- More balanced event labels, especially for shots and turnovers.
+- Stronger ball detector and tracker.
+- Transformer-based temporal event models.
+- RF-DETR as an optional detector backend if the team decides to maintain it.
+- Better player re-identification across track fragments.
+- Real-time or near-real-time inference.
+- Clearer packaging of reproducibility runs with smaller committed fixtures.
+
+## Contributors
+
+Project team contributors are not listed in the current repository metadata. Add names here before public release if required by the team.
+
+## License / Acknowledgements
+
+No license file is currently present. Add a `LICENSE` file before public distribution.
+
+Acknowledgements:
+
+- SoccerNet for football video dataset infrastructure.
+- Ultralytics YOLO for object detection.
+- ByteTrack for multi-object tracking.
+- CVAT for temporal annotation workflow.
+- PyTorch for neural network experiments.
