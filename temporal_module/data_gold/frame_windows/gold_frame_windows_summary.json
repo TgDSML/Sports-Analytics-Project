@@ -1,0 +1,31 @@
+{
+  "status": "ready",
+  "shape": [
+    1075,
+    16,
+    112,
+    112,
+    3
+  ],
+  "window_size": 64,
+  "stride": 16,
+  "sample_frames": 16,
+  "height": 112,
+  "width": 112,
+  "classes": [
+    "background",
+    "carry",
+    "pass",
+    "turnover",
+    "shot"
+  ],
+  "label_distribution": {
+    "background": 552,
+    "carry": 124,
+    "pass": 366,
+    "turnover": 28,
+    "shot": 5
+  },
+  "clips_used": 25,
+  "clips_skipped": 0
+}

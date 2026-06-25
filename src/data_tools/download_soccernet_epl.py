@@ -33,13 +33,15 @@ def get_epl_games(splits: list[str], competition_prefix: str) -> list[tuple[str,
     games: list[tuple[str, str]] = []
     for split in splits:
         split_games = getListGames(split=split)
-        print(f"\nSplit: {split} -> {len(split_games)} games")
-        for game_id in split_games[:10]:
-            print("  SAMPLE:", repr(game_id))
+        split_matches: list[str] = []
         for game_id in split_games:
             normalized = str(game_id).replace("\\", "/").strip()
             if normalized.startswith(competition_prefix.rstrip("/")):
-                games.append((split, normalized))
+                split_matches.append(normalized)
+        print(f"\nSplit: {split} -> {len(split_matches)} available {competition_prefix.rstrip('/')} games")
+        for game_id in split_matches[:10]:
+            print("  AVAILABLE:", repr(game_id))
+        games.extend((split, game_id) for game_id in split_matches)
     return sorted(games, key=lambda item: (item[0], item[1]))
 
 
@@ -114,13 +116,13 @@ def download_selection(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Download 10 random SoccerNet Premier League half-videos."
+        description="Download 25 random SoccerNet Premier League half-videos."
     )
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
     parser.add_argument("--manifest", type=Path)
     parser.add_argument("--soccernet-dir", type=Path)
     parser.add_argument("--resolution", choices=sorted(VALID_RESOLUTIONS))
-    parser.add_argument("--sample-size", type=int)
+    parser.add_argument("--sample-size", type=int, default=25)
     parser.add_argument("--seed", type=int)
     parser.add_argument("--split", action="append", dest="splits")
     parser.add_argument("--no-download", action="store_true")
@@ -133,7 +135,7 @@ def main() -> int:
     soccernet_dir = args.soccernet_dir or Path(get_config_value(config, "data.soccernet_dir"))
     manifest_path = args.manifest or Path(get_config_value(config, "data.manifest_path"))
     resolution = args.resolution or str(get_config_value(config, "video.resolution", "720p"))
-    sample_size = args.sample_size or int(get_config_value(config, "data.sample_size", 10))
+    sample_size = args.sample_size or int(get_config_value(config, "data.sample_size", 25))
     seed = args.seed if args.seed is not None else int(get_config_value(config, "data.random_seed", 42))
     splits = args.splits or list(get_config_value(config, "data.splits", ["valid"]))
     competition_prefix = str(get_config_value(config, "data.competition_prefix", "england_epl/"))
