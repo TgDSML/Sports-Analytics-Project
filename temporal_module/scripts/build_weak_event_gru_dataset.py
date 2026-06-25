@@ -56,6 +56,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--val-clips", type=int, default=1)
     parser.add_argument("--test-clips", type=int, default=2)
     parser.add_argument(
+        "--clip-list",
+        default="",
+        help="Optional newline-delimited clip-id file. When set, only listed clips are used.",
+    )
+    parser.add_argument(
         "--balance-strategy",
         choices=["undersample", "none"],
         default="undersample",
@@ -105,6 +110,22 @@ def clip_dirs(derived_root: Path) -> list[Path]:
         for path in derived_root.iterdir()
         if path.is_dir() and (path / "temporal_frames.csv").exists()
     )
+
+
+def read_clip_list(path: str) -> set[str] | None:
+    if not path:
+        return None
+    clip_list_path = Path(path)
+    if not clip_list_path.exists():
+        raise FileNotFoundError(f"Clip list not found: {clip_list_path}")
+    clips = {
+        line.strip()
+        for line in clip_list_path.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    }
+    if not clips:
+        raise ValueError(f"Clip list is empty: {clip_list_path}")
+    return clips
 
 
 def normalize_event_type(value: Any) -> str:
@@ -703,7 +724,10 @@ def main() -> int:
     args = parse_args()
     derived_root = Path(args.derived_root)
     output_dir = Path(args.output_dir)
+    selected_clip_ids = read_clip_list(args.clip_list)
     clips = clip_dirs(derived_root)
+    if selected_clip_ids is not None:
+        clips = [path for path in clips if path.name in selected_clip_ids]
     frames_by_clip: dict[str, pd.DataFrame] = {}
     skipped: list[dict[str, str]] = []
     windows: list[dict[str, Any]] = []

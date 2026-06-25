@@ -1,0 +1,10 @@
+{
+  "clips_expected": 25,
+  "clips_not_ready": 0,
+  "clips_ready": 25,
+  "clips_ready_with_warnings": 0,
+  "created_at": "2026-06-25T11:44:16+00:00",
+  "expected_clip_source": "temporal_module/data/derived non-gold clip directories",
+  "forbidden_sources_used": [],
+  "gold_label_dependency_detected": false
+}
