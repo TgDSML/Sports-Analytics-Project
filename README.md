@@ -45,6 +45,12 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
+Optional development checks use `pytest`. `PyYAML` can also be installed for full YAML parsing, although the pipeline includes a small fallback parser for the default config:
+
+```bash
+pip install pytest PyYAML
+```
+
 You can also run the setup script for your platform:
 
 Windows:
@@ -333,10 +339,10 @@ Generated outputs:
 
 Use `src.pipeline.run_clip` for the end-to-end 720p workflow. It cuts the clip, runs player and ball detection/tracking, assigns teams, estimates possession, and creates carries, interceptions, passing summaries, passing maps, videos, logs, and QA reports inside one per-match output folder.
 
-PowerShell example:
+Run from the repository root:
 
-```powershell
-.\venv\Scripts\python.exe -m src.pipeline.run_clip --config configs\default_pipeline.yaml --video "data\SoccerNet\england_epl\2015-2016\2015-09-26 - 17-00 Manchester United 3 - 0 Sunderland\1_720p.mkv" --clip-id england_epl__2015_2016__2015_09_26___17_00_Manchester_United_3___0_Sunderland__h1_720p_golden_test
+```bash
+python -m src.pipeline.run_clip --config configs/default_pipeline.yaml --video "data/SoccerNet/england_epl/2015-2016/2015-09-26 - 17-00 Manchester United 3 - 0 Sunderland/1_720p.mkv" --clip-id england_epl__2015_2016__2015_09_26___17_00_Manchester_United_3___0_Sunderland__h1_720p_golden_test
 ```
 
 Expected output layout:
@@ -364,7 +370,7 @@ enough. Tracks without enough clean torso samples are labeled `Unknown`.
 After clip pipeline outputs exist, run the normal temporal event-candidate sweep from the project root:
 
 ```powershell
-.\venv\Scripts\python.exe temporal_module\scripts\run_event_candidate_sweep.py --outputs-root outputs --derived-root temporal_module\data\derived --k-nearest 4 --defender-radius-px 100 --max-merged-pass-span-frames 24 --interception-duplicate-frame-tolerance 2
+python temporal_module/scripts/run_event_candidate_sweep.py --outputs-root outputs --derived-root temporal_module/data/derived --k-nearest 4 --defender-radius-px 100 --max-merged-pass-span-frames 24 --interception-duplicate-frame-tolerance 2
 ```
 
 This sweep builds temporal frames, weak pass exports, carries, pass candidates, turnover/interception candidates, shot candidates, refined candidates, unified event candidates, and then runs pass scoring as the final downstream stage. Pass scoring runs only after each clip has both `pass_candidates_refined.csv` and `event_candidates_unified.csv`; per-clip sweep status is written to `temporal_module\data\derived\event_candidate_sweep_summary.csv`.
@@ -372,9 +378,9 @@ This sweep builds temporal frames, weak pass exports, carries, pass candidates, 
 For a one-clip validation run, pass the exact derived clip directory name:
 
 ```powershell
-python temporal_module\scripts\run_event_candidate_sweep.py ^
+python temporal_module/scripts/run_event_candidate_sweep.py ^
 --outputs-root outputs ^
---derived-root temporal_module\data\derived ^
+--derived-root temporal_module/data/derived ^
 --clip-id england_epl__2014_2015__2015_04_11___19_30_Burnley_0___1_Arsenal__h1_720p ^
 --k-nearest 4 ^
 --defender-radius-px 100 ^
@@ -389,26 +395,26 @@ With `--clip-id`, the summary CSV contains only that clip and sets `selected_cli
 Inspect a local SoccerNet folder and create candidate inventory files:
 
 ```powershell
-python temporal_module\scripts\inspect_soccernet_dataset.py ^
---soccernet-root "REAL_PATH_TO_SOCCERNET_FOLDER"
+python temporal_module/scripts/inspect_soccernet_dataset.py ^
+--soccernet-root "<SOCCERNET_ROOT>"
 ```
 
 Build the local existing-clip manifest before adding more SoccerNet clips:
 
 ```powershell
-python temporal_module\scripts\build_soccernet_download_plan.py ^
+python temporal_module/scripts/build_soccernet_download_plan.py ^
 --outputs-root outputs ^
---derived-root temporal_module\data\derived ^
+--derived-root temporal_module/data/derived ^
 --target-new-clips 25
 ```
 
 After a SoccerNet inventory exists, build a duplicate-aware new-clip plan:
 
 ```powershell
-python temporal_module\scripts\build_soccernet_download_plan.py ^
+python temporal_module/scripts/build_soccernet_download_plan.py ^
 --outputs-root outputs ^
---derived-root temporal_module\data\derived ^
---soccernet-inventory temporal_module\data\soccernet_inventory\soccernet_pilot_candidates.csv ^
+--derived-root temporal_module/data/derived ^
+--soccernet-inventory temporal_module/data/soccernet_inventory/soccernet_pilot_candidates.csv ^
 --target-new-clips 25
 ```
 
@@ -423,9 +429,9 @@ python -m pip install SoccerNet
 Dry-run selected tracking downloads from the reviewed plan:
 
 ```powershell
-python temporal_module\scripts\download_soccernet_selected_clips.py ^
---selection-manifest temporal_module\data\soccernet_inventory\soccernet_new_clip_download_plan.csv ^
---soccernet-root "C:\Users\nikoma\Desktop\SoccerNet" ^
+python temporal_module/scripts/download_soccernet_selected_clips.py ^
+--selection-manifest temporal_module/data/soccernet_inventory/soccernet_new_clip_download_plan.csv ^
+--soccernet-root "<SOCCERNET_ROOT>" ^
 --dataset-mode tracking ^
 --dry-run ^
 --max-downloads 25
@@ -437,19 +443,19 @@ python temporal_module\scripts\download_soccernet_selected_clips.py ^
 set SOCCERNET_VIDEO_PASSWORD=YOUR_PASSWORD
 ```
 
-The downloader reads only reviewed `candidate_for_new_download` rows, never downloads the full SoccerNet dataset by default, and writes logs only under `temporal_module\data\soccernet_inventory`.
+The downloader reads only reviewed `candidate_for_new_download` rows, never downloads the full SoccerNet dataset by default, and writes logs only under `temporal_module/data/soccernet_inventory`.
 
 Build a reproducible Premier League new-clip selection manifest without downloading videos:
 
 ```powershell
-python src\data_tools\download_soccernet_epl.py ^
+python src/data_tools/download_soccernet_epl.py ^
   --sample-size 25 ^
   --seed 42 ^
-  --exclude-manifest "PATH_TO_OLD_MANIFEST.csv" ^
+  --exclude-manifest "data/manifests/dataset_manifest.csv" ^
   --outputs-root outputs ^
-  --derived-root temporal_module\data\derived ^
-  --soccernet-dir "C:\Users\nikoma\Desktop\SoccerNet" ^
-  --manifest "temporal_module\data\soccernet_inventory\epl_new_25_selection.csv" ^
+  --derived-root temporal_module/data/derived ^
+  --soccernet-dir "<SOCCERNET_ROOT>" ^
+  --manifest "temporal_module/data/soccernet_inventory/epl_new_25_selection.csv" ^
   --dry-run
 ```
 
@@ -458,9 +464,9 @@ Review `epl_new_25_selection.csv`, `epl_new_25_selection_audit.csv`, and `epl_ne
 Then dry-run the existing selected-clip downloader:
 
 ```powershell
-python temporal_module\scripts\download_soccernet_selected_clips.py ^
-  --selection-manifest "temporal_module\data\soccernet_inventory\epl_new_25_selection.csv" ^
-  --soccernet-root "C:\Users\nikoma\Desktop\SoccerNet" ^
+python temporal_module/scripts/download_soccernet_selected_clips.py ^
+  --selection-manifest "temporal_module/data/soccernet_inventory/epl_new_25_selection.csv" ^
+  --soccernet-root "<SOCCERNET_ROOT>" ^
   --dataset-mode broadcast_720p ^
   --dry-run ^
   --max-downloads 25
@@ -482,7 +488,6 @@ sports-analytics-project/
 |-- data/              # Local input videos and datasets, ignored by Git
 |-- notebooks/         # Experiments and exploratory analysis
 |-- outputs/           # Generated videos and reports, ignored by Git
-|-- scripts/           # Utility scripts
 |-- src/
 |   |-- analytics/     # Sports metrics and analysis code
 |   |-- detection/     # YOLO detection and visualization code

@@ -34,7 +34,7 @@ Inspect a local SoccerNet folder and create candidate inventory files:
 
 ```cmd
 python temporal_module\scripts\inspect_soccernet_dataset.py ^
---soccernet-root "REAL_PATH_TO_SOCCERNET_FOLDER"
+--soccernet-root "<SOCCERNET_ROOT>"
 ```
 
 Build the local existing-clip manifest before adding more SoccerNet clips:
@@ -69,7 +69,7 @@ Dry-run selected tracking downloads from the reviewed plan:
 ```cmd
 python temporal_module\scripts\download_soccernet_selected_clips.py ^
 --selection-manifest temporal_module\data\soccernet_inventory\soccernet_new_clip_download_plan.csv ^
---soccernet-root "C:\Users\nikoma\Desktop\SoccerNet" ^
+--soccernet-root "<SOCCERNET_ROOT>" ^
 --dataset-mode tracking ^
 --dry-run ^
 --max-downloads 25
@@ -89,10 +89,10 @@ Build a reproducible Premier League new-clip selection manifest without download
 python src\data_tools\download_soccernet_epl.py ^
   --sample-size 25 ^
   --seed 42 ^
-  --exclude-manifest "PATH_TO_OLD_MANIFEST.csv" ^
+  --exclude-manifest "data\manifests\dataset_manifest.csv" ^
   --outputs-root outputs ^
   --derived-root temporal_module\data\derived ^
-  --soccernet-dir "C:\Users\nikoma\Desktop\SoccerNet" ^
+  --soccernet-dir "<SOCCERNET_ROOT>" ^
   --manifest "temporal_module\data\soccernet_inventory\epl_new_25_selection.csv" ^
   --dry-run
 ```
@@ -104,7 +104,7 @@ Then dry-run the existing selected-clip downloader:
 ```cmd
 python temporal_module\scripts\download_soccernet_selected_clips.py ^
   --selection-manifest "temporal_module\data\soccernet_inventory\epl_new_25_selection.csv" ^
-  --soccernet-root "C:\Users\nikoma\Desktop\SoccerNet" ^
+  --soccernet-root "<SOCCERNET_ROOT>" ^
   --dataset-mode broadcast_720p ^
   --dry-run ^
   --max-downloads 25
